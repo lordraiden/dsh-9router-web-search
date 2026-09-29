@@ -97,14 +97,18 @@ test("gives up after the final retry and reports the network failure", async () 
 	}
 });
 
-test("omits the authorization header when no key is configured", async () => {
+test("rejects before any network call when no key is configured", async () => {
 	const stub = installFetchStub(SEARCH_OK);
 	try {
 		const { apiKey: _apiKey, ...options } = BASE_OPTIONS;
 		const provider = new NineRouterSearchProvider(() => ({ ...options }));
-		const result = await provider.search({ query: "q" });
-		assert.equal(result.sources.length, 1);
-		assert.equal(stub.calls[0].init.headers.authorization, undefined);
+		await assert.rejects(provider.search({ query: "q" }), (error) => {
+			assert.equal(error.name, "WebError");
+			assert.equal(error.code, "WEB_PROVIDER_CREDENTIAL_MISSING");
+			assert.match(error.message, /NINE_ROUTER_API_KEY/);
+			return true;
+		});
+		assert.equal(stub.calls.length, 0);
 	} finally {
 		stub.restore();
 	}
@@ -116,17 +120,6 @@ test("sends the bearer key when one is configured", async () => {
 		const provider = new NineRouterSearchProvider(() => ({ ...BASE_OPTIONS }));
 		await provider.search({ query: "q" });
 		assert.equal(stub.calls[0].init.headers.authorization, "Bearer k");
-	} finally {
-		stub.restore();
-	}
-});
-
-test("hints at the missing key on a 401 without a key", async () => {
-	const stub = installFetchStub(() => jsonResponse(401, { error: { message: "unauthorized" } }));
-	try {
-		const { apiKey: _apiKey, ...options } = BASE_OPTIONS;
-		const provider = new NineRouterSearchProvider(() => ({ ...options }));
-		await assert.rejects(provider.search({ query: "q" }), /unauthorized — no API key is configured/);
 	} finally {
 		stub.restore();
 	}
@@ -147,7 +140,7 @@ test("fetch maps a 200 response through mapFetchResponse", async () => {
 		assert.equal(result.statusCode, 200);
 		assert.deepEqual(result.body, { kind: "text", content: "body" });
 		assert.equal(result.truncated, false);
-		assert.equal(stub.calls[0].init.body, JSON.stringify({ model: "fetch-combo", url: "https://example.com", format: "markdown", maxCharacters: 50000 }));
+		assert.equal(stub.calls[0].init.body, JSON.stringify({ model: "fetch-combo", url: "https://example.com", format: "markdown", max_characters: 50000 }));
 	} finally {
 		stub.restore();
 	}
@@ -160,7 +153,7 @@ test("fetch sends the configured maxCharacters and applies it locally", async ()
 		const result = await provider.fetch({ url: "https://example.com" });
 		assert.equal(result.truncated, true);
 		assert.deepEqual(result.body, { kind: "text", content: "abc" });
-		assert.equal(stub.calls[0].init.body, JSON.stringify({ model: "fetch-combo", url: "https://example.com", format: "markdown", maxCharacters: 3 }));
+		assert.equal(stub.calls[0].init.body, JSON.stringify({ model: "fetch-combo", url: "https://example.com", format: "markdown", max_characters: 3 }));
 	} finally {
 		stub.restore();
 	}
@@ -174,7 +167,7 @@ test("fetch resolves a non-2xx response as a result", async () => {
 		assert.equal(result.statusCode, 404);
 		assert.equal(result.body.kind, "text");
 		assert.match(result.body.content, /not found/);
-		assert.equal(result.truncated, true);
+		assert.equal(result.truncated, false);
 	} finally {
 		stub.restore();
 	}

@@ -2,6 +2,16 @@ import z from "@deepseek-ai/schemastery";
 import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import { launchEnvironmentOf } from "@deepseek-ai/dsh-launch-environment";
 import { WebError } from "@deepseek-ai/dsh-web";
+import {
+	aborted,
+	buildEndpoint,
+	isAbortError,
+	nineRouterPostJson,
+	providerErrorDetail,
+	WEB_ABORTED,
+	WEB_PROVIDER_CREDENTIAL_MISSING,
+	WEB_PROVIDER_ERROR
+} from "./nine-router-client.js";
 
 //#region provider
 /** Stable id this provider registers under for both search and fetch. */
@@ -28,10 +38,21 @@ const DEFAULT_FETCH_FORMAT = "markdown";
 /** Default fetch body cap in characters; enforced locally and sent to the gateway. */
 const DEFAULT_MAX_CHARACTERS = 50_000;
 
+/** Sources must point at http(s) URLs; anything else is dropped. */
+const SOURCE_URL_PATTERN = /^https?:\/\//u;
+
+/**
+ * 9router `content.format` values mapped onto DSH's closed `WebFetchBody`
+ * union. Unknown formats are rejected, never converted to text silently.
+ */
+const FETCH_FORMAT_KIND = { html: "html", markdown: "text", text: "text" };
+
 /**
  * Map the 9router `/v1/search` response to a normalized search result.
- * Each `results[]` item carries `url`, `title`, `snippet` and `published_at`,
- * which map directly onto DSH's `WebSource`.
+ * Each `results[]` item carries `url`, `title`, `snippet` and `published_at`.
+ * Individual invalid URLs are dropped without invalidating the rest of the
+ * search; URLs are trimmed and deduped, never rewritten (query strings are
+ * preserved as sent).
  * @param body - the parsed JSON response body.
  * @returns the normalized result with deduped sources.
  * @throws {@link WebError} when the response carries an `errors` array or no results key.
@@ -39,17 +60,19 @@ const DEFAULT_MAX_CHARACTERS = 50_000;
 function mapSearchResponse(body) {
 	const errors = body?.errors;
 	if (Array.isArray(errors) && errors.length > 0) {
-		throw new WebError(`9router search failed: ${String(errors[0])}`, "WEB_PROVIDER_ERROR");
+		throw new WebError(`9router search failed: ${String(errors[0])}`, WEB_PROVIDER_ERROR);
 	}
 	const raw = body?.results;
 	if (!Array.isArray(raw)) {
-		throw new WebError("9router search returned no results array", "WEB_PROVIDER_ERROR");
+		throw new WebError("9router search returned no results array", WEB_PROVIDER_ERROR);
 	}
 	const seen = /* @__PURE__ */ new Set();
 	const sources = [];
 	for (const item of raw) {
-		const url = item?.url;
-		if (typeof url !== "string" || url.length === 0 || seen.has(url)) continue;
+		const rawUrl = item?.url;
+		if (typeof rawUrl !== "string") continue;
+		const url = rawUrl.trim();
+		if (url.length === 0 || !SOURCE_URL_PATTERN.test(url) || seen.has(url)) continue;
 		seen.add(url);
 		sources.push({
 			url,
@@ -68,33 +91,85 @@ function mapSearchResponse(body) {
 
 /**
  * Map the 9router `/v1/web/fetch` response to a normalized fetch result.
- * The gateway caps the body server-side via `maxCharacters` and reports the
- * final length in `content.length`; a body that reached the cap is flagged
- * `truncated`.
+ * The gateway caps the body server-side via `max_characters` and the local
+ * cap is applied as well; a body that reached a cap is flagged `truncated`.
+ * A 2xx response missing the expected structure, or carrying an
+ * unsupported format, is a provider error — never a silent empty success.
  * @param data - the parsed JSON response body.
  * @param result - the result envelope: request url, HTTP status, and the cap sent.
  * @returns the normalized fetch result.
  */
 function mapFetchResponse(data, { url, statusCode, maxCharacters }) {
 	const content = data?.content;
-	let text = typeof content?.text === "string" ? content.text : "";
+	if (content === null || typeof content !== "object") {
+		throw new WebError("9router fetch response is missing its content object", WEB_PROVIDER_ERROR);
+	}
+	const text = content.text;
+	if (typeof text !== "string") {
+		throw new WebError("9router fetch response content.text is not a string", WEB_PROVIDER_ERROR);
+	}
+	const kind = FETCH_FORMAT_KIND[content.format];
+	if (kind === void 0) {
+		throw new WebError(`9router fetch returned an unsupported content format: ${String(content.format)}`, WEB_PROVIDER_ERROR);
+	}
+	let body = text;
 	let truncated = false;
-	if (Number.isFinite(maxCharacters) && maxCharacters > 0 && text.length > maxCharacters) {
-		text = text.slice(0, maxCharacters);
+	if (Number.isFinite(maxCharacters) && maxCharacters > 0 && body.length > maxCharacters) {
+		body = body.slice(0, maxCharacters);
 		truncated = true;
 	}
 	return {
 		url,
 		statusCode,
-		body: {
-			kind: content?.format === "html" ? "html" : "text",
-			content: text
-		},
+		body: { kind, content: body },
 		truncated
 	};
 }
 
-/** 9router-backed search provider; HTTP and credential failures surface as `WEB_PROVIDER_ERROR`. */
+/**
+ * Resolve the API key for one operation: the literal configured key wins,
+ * then the credential reference; a missing key is a clear, routable failure
+ * raised before any network call, naming only the credential reference.
+ * @param options - the operation snapshot.
+ * @param signal - the external abort signal, if any.
+ * @param kind - `search` or `fetch`, for messages.
+ * @returns the resolved key.
+ */
+async function requireApiKey(options, signal, kind) {
+	if (options.apiKey !== void 0 && options.apiKey.length > 0) return options.apiKey;
+	let resolved;
+	try {
+		resolved = await abortable(options.resolveApiKey?.() ?? Promise.resolve(void 0), signal);
+	} catch (error) {
+		if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
+		throw new WebError(`9router ${kind} credential resolution failed: ${String(error)}`, WEB_PROVIDER_ERROR, { cause: error });
+	}
+	if (resolved === void 0 || resolved.length === 0) {
+		throw new WebError(`9router ${kind} has no API key configured — store "${options.apiKeyEnv}" as a credential or set a literal "apiKey"`, WEB_PROVIDER_CREDENTIAL_MISSING);
+	}
+	return resolved;
+}
+
+function abortable(operation, signal) {
+	if (signal === void 0) return operation;
+	if (signal.aborted) return Promise.reject(aborted(signal));
+	return new Promise((resolve, reject) => {
+		const onAbort = () => reject(aborted(signal));
+		signal.addEventListener("abort", onAbort, { once: true });
+		operation.then(
+			(value) => {
+				signal.removeEventListener("abort", onAbort);
+				resolve(value);
+			},
+			(error) => {
+				signal.removeEventListener("abort", onAbort);
+				reject(error);
+			}
+		);
+	});
+}
+
+/** 9router-backed search provider; HTTP and credential failures surface as `WebError` with stable codes. */
 var NineRouterSearchProvider = class {
 	resolveOptions;
 	id = PROVIDER_ID;
@@ -107,53 +182,36 @@ var NineRouterSearchProvider = class {
 	}
 	async search(request, signal) {
 		const options = this.resolveOptions();
-		const apiKey = await this.apiKey(options, signal);
-		throwIfAborted(signal);
-		const endpoint = `${options.baseURL}/search`;
+		const apiKey = await requireApiKey(options, signal, "search");
+		const endpoint = buildEndpoint(options.baseURL, "/search");
 		const body = {
 			model: options.searchModel,
 			query: request.query,
 			search_type: options.searchType,
 			max_results: request.maxResults ?? options.defaultMaxResults
 		};
-		const response = await this.post(endpoint, options, apiKey, body, signal);
-		try {
-			return mapSearchResponse(await response.json());
-		} catch (error) {
-			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
-			if (error instanceof WebError) throw error;
-			throw new WebError(`9router search returned an unprocessable response body: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
-		}
-	}
-	async post(endpoint, options, apiKey, body, signal) {
-		const response = await requestWithRetries(endpoint, requestInit(apiKey, body), {
-			signal,
+		const { response, payload } = await nineRouterPostJson(endpoint, {
+			kind: "search",
+			apiKey,
+			body,
 			timeoutMs: options.searchTimeoutMs,
-			kind: "search"
+			signal
 		});
 		if (!response.ok) {
-			throw new WebError(await providerErrorMessage("search", response, apiKey, options.apiKeyEnv), "WEB_PROVIDER_ERROR");
+			throw new WebError(providerErrorDetail(payload, response.status, "search"), WEB_PROVIDER_ERROR);
 		}
-		return response;
-	}
-	async apiKey(options, signal) {
-		throwIfAborted(signal);
-		if (options.apiKey !== void 0 && options.apiKey.length > 0) return options.apiKey;
-		let resolved;
-		try {
-			resolved = await abortable(options.resolveApiKey?.() ?? Promise.resolve(void 0), signal);
-		} catch (error) {
-			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
-			throw new WebError(`9router search credential resolution failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
+		if (payload === void 0) {
+			throw new WebError("9router search returned an unprocessable response body", WEB_PROVIDER_ERROR);
 		}
-		return resolved;
+		return mapSearchResponse(payload);
 	}
 };
 
 /**
- * 9router-backed fetch provider. 9router returns HTTP 200 on success; a non-2xx
- * response is surfaced as a result carrying that status and a text body so the
- * seam's "non-2xx is a result, not a throw" contract holds.
+ * 9router-backed fetch provider. A non-2xx response is surfaced as a result
+ * carrying that status and a short text body so the seam's "non-2xx is a
+ * result, not a throw" contract holds; structural failures of a 2xx body are
+ * `WebError`s.
  */
 var NineRouterFetchProvider = class {
 	resolveOptions;
@@ -166,136 +224,35 @@ var NineRouterFetchProvider = class {
 	}
 	async fetch(request, signal) {
 		const options = this.resolveOptions();
-		const apiKey = await this.apiKey(options, signal);
-		throwIfAborted(signal);
-		const endpoint = `${options.baseURL}/web/fetch`;
+		const apiKey = await requireApiKey(options, signal, "fetch");
+		const endpoint = buildEndpoint(options.baseURL, "/web/fetch");
 		const body = {
 			model: options.fetchModel,
 			url: request.url,
 			format: options.fetchFormat,
-			maxCharacters: options.maxCharacters
+			max_characters: options.maxCharacters
 		};
-		const response = await requestWithRetries(endpoint, requestInit(apiKey, body), {
-			signal,
+		const { response, payload } = await nineRouterPostJson(endpoint, {
+			kind: "fetch",
+			apiKey,
+			body,
 			timeoutMs: options.fetchTimeoutMs,
-			kind: "fetch"
+			signal
 		});
 		if (!response.ok) {
 			return {
 				url: request.url,
 				statusCode: response.status,
-				body: { kind: "text", content: await providerErrorMessage("fetch", response, apiKey, options.apiKeyEnv) },
-				truncated: true
+				body: { kind: "text", content: providerErrorDetail(payload, response.status, "fetch") },
+				truncated: false
 			};
 		}
-		try {
-			return mapFetchResponse(await response.json(), { url: request.url, statusCode: response.status, maxCharacters: options.maxCharacters });
-		} catch (error) {
-			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
-			throw new WebError(`9router fetch returned an unprocessable response body: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
+		if (payload === void 0) {
+			throw new WebError("9router fetch returned an unprocessable response body", WEB_PROVIDER_ERROR);
 		}
-	}
-	async apiKey(options, signal) {
-		throwIfAborted(signal);
-		if (options.apiKey !== void 0 && options.apiKey.length > 0) return options.apiKey;
-		let resolved;
-		try {
-			resolved = await abortable(options.resolveApiKey?.() ?? Promise.resolve(void 0), signal);
-		} catch (error) {
-			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
-			throw new WebError(`9router fetch credential resolution failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
-		}
-		return resolved;
+		return mapFetchResponse(payload, { url: request.url, statusCode: response.status, maxCharacters: options.maxCharacters });
 	}
 };
-
-function requestSignal(signal, timeoutMs) {
-	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return signal;
-	const timeout = AbortSignal.timeout(timeoutMs);
-	if (signal === void 0) return timeout;
-	return AbortSignal.any([signal, timeout]);
-}
-function throwIfAborted(signal) {
-	if (signal?.aborted === true) throw aborted(signal);
-}
-function aborted(signal, fallback) {
-	return new WebError("9router web call aborted", "WEB_ABORTED", { cause: signal?.aborted === true ? signal.reason : fallback });
-}
-function isAbortError(error) {
-	return error instanceof DOMException && error.name === "AbortError";
-}
-function abortable(operation, signal) {
-	if (signal === void 0) return operation;
-	if (signal.aborted) return Promise.reject(aborted(signal));
-	return new Promise((resolve, reject) => {
-		const onAbort = () => reject(aborted(signal));
-		signal.addEventListener("abort", onAbort, { once: true });
-		operation.then((value) => {
-			signal.removeEventListener("abort", onAbort);
-			resolve(value);
-		}, (error) => {
-			signal.removeEventListener("abort", onAbort);
-			reject(new Error(String(error).replace(/^Error: /u, ""), { cause: error }));
-		});
-	});
-}
-function requestInit(apiKey, body) {
-	return {
-		method: "POST",
-		redirect: "error",
-		headers: {
-			"content-type": "application/json",
-			"accept": "application/json",
-			...(apiKey !== void 0 ? { authorization: `Bearer ${apiKey}` } : {})
-		},
-		body: JSON.stringify(body)
-	};
-}
-function isRetryableStatus(status) {
-	return status === 500 || status === 502 || status === 503 || status === 504;
-}
-async function requestWithRetries(endpoint, init, { signal, timeoutMs, kind }) {
-	const delays = [500, 1500];
-	let attempt = 0;
-	for (;;) {
-		throwIfAborted(signal);
-		try {
-			const response = await fetch(endpoint, { ...init, signal: requestSignal(signal, timeoutMs) });
-			if (response.ok || !isRetryableStatus(response.status) || attempt >= delays.length) return response;
-			response.body?.cancel();
-		} catch (error) {
-			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
-			if (attempt >= delays.length) throw new WebError(`9router ${kind} request failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
-		}
-		await abortableDelay(delays[attempt], signal);
-		attempt += 1;
-	}
-}
-function abortableDelay(ms, signal) {
-	if (signal === void 0) return new Promise((resolve) => setTimeout(resolve, ms));
-	if (signal.aborted) return Promise.reject(aborted(signal));
-	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => {
-			signal.removeEventListener("abort", onAbort);
-			resolve();
-		}, ms);
-		const onAbort = () => {
-			clearTimeout(timer);
-			reject(aborted(signal));
-		};
-		signal.addEventListener("abort", onAbort, { once: true });
-	});
-}
-async function providerErrorMessage(kind, response, apiKey, apiKeyEnv) {
-	let message = `9router ${kind} API error (HTTP ${response.status})`;
-	try {
-		const parsed = await response.json();
-		const detail = typeof parsed?.error === "string" ? parsed.error : parsed?.error?.message ?? parsed?.message;
-		if (typeof detail === "string" && detail.length > 0) message = detail;
-	} catch { /* response body is not JSON; keep the HTTP message */ }
-	if (response.status === 401 && apiKey === void 0) message = `${message} — no API key is configured; store "${apiKeyEnv ?? "NINE_ROUTER_API_KEY"}" or set a literal "apiKey"`;
-	return message;
-}
 //#endregion
 
 //#region index
@@ -324,10 +281,10 @@ const SEARCH_BASE_URL_ENV = "NINE_ROUTER_BASE_URL";
 const SETTINGS_NAMESPACE = "web-search-9router";
 
 /**
- * Resolve the endpoint for one operation: explicit configuration wins over the
- * `NINE_ROUTER_BASE_URL` environment value; with neither set there is no
- * endpoint and the providers report themselves unavailable. Env values bypass
- * the schema, so the http(s) check is applied here.
+ * Resolve the endpoint for one operation: explicit configuration wins over
+ * the `NINE_ROUTER_BASE_URL` environment value; with neither set there is no
+ * endpoint and the providers report themselves unavailable. Env values
+ * bypass the schema, so the http(s) check is applied here.
  * @param ctx - the plugin context (launch environment seam).
  * @param explicit - the schema-resolved `baseURL`, if configured.
  * @returns the endpoint, or `undefined` when no endpoint is configured.

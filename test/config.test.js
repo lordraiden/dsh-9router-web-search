@@ -147,13 +147,13 @@ test("defaultMaxResults is sent only when the request has no maxResults", async 
 	}
 });
 
-test("maxCharacters is sent to the fetch endpoint", async () => {
+test("max_characters is sent to the fetch endpoint", async () => {
 	const stub = installFetchStub(() => jsonResponse(200, { content: { format: "markdown", text: "hi" } }));
 	try {
 		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS }));
 		await provider.fetch({ url: "https://example.com" });
 		const body = JSON.parse(stub.calls[0].init.body);
-		assert.equal(body.maxCharacters, 50000);
+		assert.equal(body.max_characters, 50000);
 	} finally {
 		stub.restore();
 	}

@@ -21,10 +21,16 @@ test("maps an html fetch response to an html body", () => {
 	assert.deepEqual(result.body, { kind: "html", content: "<p>hi</p>" });
 });
 
-test("falls back to an empty text body for missing content", () => {
-	const result = mapFetchResponse({}, { url: "https://example.com", statusCode: 200, maxCharacters: 0 });
-	assert.deepEqual(result.body, { kind: "text", content: "" });
-	assert.equal(result.truncated, false);
+test("throws a provider error when the content object is missing", () => {
+	assert.throws(
+		() => mapFetchResponse({}, { url: "https://example.com", statusCode: 200, maxCharacters: 0 }),
+		(error) => {
+			assert.equal(error.name, "WebError");
+			assert.equal(error.code, "WEB_PROVIDER_ERROR");
+			assert.match(error.message, /missing its content object/);
+			return true;
+		}
+	);
 });
 
 test("flags truncated when the body reached the character cap", () => {
