@@ -2,7 +2,7 @@
 
 ## Project
 
-**Repository:** `lordraiden/dsh-web-search-9router`
+**Repository:** `lordraiden/dsh-9router-web-search`
 
 **Purpose:** DSH plugin that registers 9router-backed web search and web fetch providers with the `ctx.web` seam. The plugin maps DSH's native web operations to 9router's `/v1/search` and `/v1/web/fetch` endpoints.
 
@@ -159,7 +159,7 @@ Compatibility testing is part of the support contract: declare only DSH versions
 - The plugin is distributed from this GitHub repository; stable versions are represented by matching `v<version>` GitHub release tags.
 - Storefront synchronization is automated through `scripts/sync-storefront.mjs`.
 - Do not hand-edit generated storefront README files.
-- Keep storefront automation derived from the canonical repository identity (`lordraiden/dsh-web-search-9router`) while preserving its documented environment-variable overrides.
+- Keep storefront automation derived from the canonical repository identity (`lordraiden/dsh-9router-web-search`) while preserving its documented environment-variable overrides.
 - Storefront work must not place GitHub tokens, credentials, or private paths in committed files.
 - Release automation must test the same source that it packages and must keep the release tag aligned with `package.json`.
 

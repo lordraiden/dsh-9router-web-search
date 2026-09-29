@@ -1,4 +1,4 @@
-# dsh-web-search-9router — bundle patch.
+# dsh-9router-web-search — bundle patch.
 # Pin both web seam capabilities to this plugin's providers, then insert the
 # plugin entry so its apply() runs and registers the 9router search + fetch
 # providers on ctx.web. The `web` row replace pins both capabilities; a
@@ -9,6 +9,6 @@
     fetchProvider: 9router
 - insert:
     - id: web-search-9router
-      name: dsh-web-search-9router
+      name: dsh-9router-web-search
       config:
         apiKeyEnv: NINE_ROUTER_API_KEY

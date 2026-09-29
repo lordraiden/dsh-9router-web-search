@@ -6,9 +6,9 @@ import { resolve } from 'node:path'
 
 const storefrontOwner = process.env.STOREFRONT_OWNER ?? 'awesome-dsh-plugin'
 const storefrontRepo = process.env.STOREFRONT_REPO ?? 'awesome-dsh-plugin'
-const pluginOwner = process.env.PLUGIN_OWNER ?? 'rebron1900'
-const pluginRepo = process.env.PLUGIN_REPO ?? 'dsh-web-search-9router'
-const pluginPackage = process.env.PLUGIN_PACKAGE ?? 'dsh-web-search-9router'
+const pluginOwner = process.env.PLUGIN_OWNER ?? 'lordraiden'
+const pluginRepo = process.env.PLUGIN_REPO ?? 'dsh-9router-web-search'
+const pluginPackage = process.env.PLUGIN_PACKAGE ?? 'dsh-9router-web-search'
 const pluginUrl = `https://github.com/${pluginOwner}/${pluginRepo}`
 const branch = `sync/${pluginOwner}__${pluginRepo}`
 const forkOwner = process.env.STOREFRONT_FORK_OWNER ?? pluginOwner

@@ -1,13 +1,13 @@
-# 🌐 dsh-web-search-9router
+# 🌐 dsh-9router-web-search
 
 > **Web search & fetch for DeepSeek Harness, powered by 9router.**
 > Wires the native `web_search` and `web_fetch` tools into 9router's `/v1/search` and `/v1/web/fetch` endpoints — no server-side search tool required.
 
-[![Version](https://img.shields.io/badge/version-0.2.3-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
+[![Version](https://img.shields.io/badge/version-0.2.3-green)](https://github.com/lordraiden/dsh-9router-web-search/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![ESM](https://img.shields.io/badge/module-ESM-8e44ad)](https://nodejs.org/api/esm.html)
-[![GitHub stars](https://img.shields.io/github/stars/lordraiden/dsh-web-search-9router?style=social)](https://github.com/lordraiden/dsh-web-search-9router)
+[![GitHub stars](https://img.shields.io/github/stars/lordraiden/dsh-9router-web-search?style=social)](https://github.com/lordraiden/dsh-9router-web-search)
 
 🇺🇸 **English** · [🇨🇳 简体中文](./README.zh-CN.md)
 
@@ -46,7 +46,7 @@ This plugin calls 9router's own endpoints directly and maps their responses to t
         ctx.web seam
             │  provider = "9router"
             ▼
-  dsh-web-search-9router
+  dsh-9router-web-search
    ├── search  → POST {baseURL}/search      → WebSource[]
    └── fetch   → POST {baseURL}/web/fetch   → WebFetchBody
             │
@@ -61,7 +61,7 @@ Errors surface as machine-routable `WebError` codes (`WEB_PROVIDER_ERROR`, `WEB_
 **1. Install the plugin**
 
 ```bash
-npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9router
+npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-search
 ```
 
 **2. Wire it up**
@@ -77,7 +77,7 @@ Restart Harness, then hard-refresh the browser. The `9router` options appear in 
 > 🔒 **Reproducible installs** — append a commit SHA to pin an exact version:
 >
 > ```bash
-> npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9router#44d1936
+> npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-search#44d1936
 > ```
 
 ## 🛠️ Configuration
@@ -111,7 +111,7 @@ pnpm test      # run the test suite (node:test)
 **Repository layout**
 
 ```text
-dsh-web-search-9router/
+dsh-9router-web-search/
 ├── src/index.js       # plugin entry: search + fetch providers
 ├── client.js          # settings card
 ├── cordis.patch.yml   # bundle patch registering the plugin
@@ -123,7 +123,7 @@ dsh-web-search-9router/
 
 - 📦 **Distribution** — the GitHub repository is the only distribution source; stable versions ship as `v<version>` GitHub Releases.
 - 📚 **Directory** — listed in [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin).
-- 🐛 **Issues & requests** — open an [issue](https://github.com/lordraiden/dsh-web-search-9router/issues).
+- 🐛 **Issues & requests** — open an [issue](https://github.com/lordraiden/dsh-9router-web-search/issues).
 
 ## 📄 License
 
@@ -131,4 +131,4 @@ dsh-web-search-9router/
 
 ## 🙏 Acknowledgments
 
-This project is a fork of [rebron1900/dsh-web-search-9router](https://github.com/rebron1900/dsh-web-search-9router) — thank you for the original 9router-backed web search and fetch provider for DeepSeek Harness.
+This project began as a fork of [rebron1900/dsh-web-search-9router](https://github.com/rebron1900/dsh-web-search-9router) — thank you for the original 9router-backed web search and fetch provider for DeepSeek Harness.

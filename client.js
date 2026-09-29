@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: "dsh-web-search-9router",
+  id: "dsh-9router-web-search",
   factory: (require) => {
     const module = { exports: {} };
     const exports = module.exports;
@@ -357,9 +357,9 @@ window.__ModuleLoader__.load({
 
     function apply(ctx) {
       const t = ctx.locale.bind(NAMESPACE);
-      ctx.effect(() => ctx.locale.register(NAMESPACE, LOCALE), "dsh-web-search-9router: dictionaries");
+      ctx.effect(() => ctx.locale.register(NAMESPACE, LOCALE), "dsh-9router-web-search: dictionaries");
       const card = new NineRouterCardController(ctx.configForms.get(NAMESPACE), ctx.remote?.credentials);
-      ctx.effect(() => () => { card.dispose(); }, "dsh-web-search-9router: form subscription");
+      ctx.effect(() => () => { card.dispose(); }, "dsh-9router-web-search: form subscription");
       ctx.effect(() => ctx.configForms.whileServed([NAMESPACE], () => ctx.slots.inject("plugins.item", () => ctx.slots.register({
         name: "plugins.item",
         id: "9router",
@@ -367,7 +367,7 @@ window.__ModuleLoader__.load({
         label: () => t("title"),
         locale: NAMESPACE,
         inject: () => card.inject()
-      }, NineRouterCard))), "dsh-web-search-9router: page");
+      }, NineRouterCard))), "dsh-9router-web-search: page");
     }
 
     exports.apply = apply;

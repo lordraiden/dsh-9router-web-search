@@ -1,13 +1,13 @@
-# 🌐 dsh-web-search-9router
+# 🌐 dsh-9router-web-search
 
 > **为 DeepSeek Harness 提供由 9router 背书的网页搜索与抓取。**
 > 将原生 `web_search` 与 `web_fetch` 工具接入 9router 的 `/v1/search` 与 `/v1/web/fetch` 端点 —— 无需服务端搜索工具。
 
-[![Version](https://img.shields.io/badge/version-0.2.3-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
+[![Version](https://img.shields.io/badge/version-0.2.3-green)](https://github.com/lordraiden/dsh-9router-web-search/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![ESM](https://img.shields.io/badge/module-ESM-8e44ad)](https://nodejs.org/api/esm.html)
-[![GitHub stars](https://img.shields.io/github/stars/lordraiden/dsh-web-search-9router?style=social)](https://github.com/lordraiden/dsh-web-search-9router)
+[![GitHub stars](https://img.shields.io/github/stars/lordraiden/dsh-9router-web-search?style=social)](https://github.com/lordraiden/dsh-9router-web-search)
 
 [🇺🇸 English](./README.md) · 🇨🇳 **简体中文**
 
@@ -46,7 +46,7 @@ DSH 默认的 `web_search` 使用 `web-search-deepseek` provider，它要求上�
         ctx.web seam
             │  provider = "9router"
             ▼
-  dsh-web-search-9router
+  dsh-9router-web-search
    ├── search  → POST {baseURL}/search      → WebSource[]
    └── fetch   → POST {baseURL}/web/fetch   → WebFetchBody
             │
@@ -61,7 +61,7 @@ DSH 默认的 `web_search` 使用 `web-search-deepseek` provider，它要求上�
 **1. 安装插件**
 
 ```bash
-npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9router
+npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-search
 ```
 
 **2. 接入配置**
@@ -77,7 +77,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9
 > 🔒 **可复现安装** — 追加 commit SHA 以锁定精确版本：
 >
 > ```bash
-> npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9router#44d1936
+> npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-search#44d1936
 > ```
 
 ## 🛠️ 配置
@@ -111,7 +111,7 @@ pnpm test      # 运行测试套件（node:test）
 **仓库结构**
 
 ```text
-dsh-web-search-9router/
+dsh-9router-web-search/
 ├── src/index.js       # 插件入口：search + fetch provider
 ├── client.js          # 设置卡片
 ├── cordis.patch.yml   # 注册插件的 bundle patch
@@ -123,7 +123,7 @@ dsh-web-search-9router/
 
 - 📦 **分发** — GitHub 仓库是唯一的分发来源；稳定版本以 `v<version>` GitHub Releases 发布。
 - 📚 **目录** — 已收录于 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)。
-- 🐛 **问题与需求** — 请提交 [issue](https://github.com/lordraiden/dsh-web-search-9router/issues)。
+- 🐛 **问题与需求** — 请提交 [issue](https://github.com/lordraiden/dsh-9router-web-search/issues)。
 
 ## 📄 许可证
 
@@ -131,4 +131,4 @@ dsh-web-search-9router/
 
 ## 🙏 致谢
 
-本项目 fork 自 [rebron1900/dsh-web-search-9router](https://github.com/rebron1900/dsh-web-search-9router) —— 感谢原作者为 DeepSeek Harness（DSH）提供 9router 背书的网页搜索与抓取 provider。
+本项目最初 fork 自 [rebron1900/dsh-web-search-9router](https://github.com/rebron1900/dsh-web-search-9router) —— 感谢原作者为 DeepSeek Harness（DSH）提供 9router 背书的网页搜索与抓取 provider。
