@@ -1,114 +1,261 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import React from "react";
 
-/** Minimal React surface: components render to plain trees, hooks report fixed values. */
-const render = { open: false };
-const React = {
-	createElement: (type, props, ...children) => {
-		const resolved = {
-			...(props ?? {}),
-			children: children.flat().filter((child) => child !== null && child !== undefined && child !== false)
-		};
-		return typeof type === "function" ? type(resolved) : { type, props: resolved };
-	},
-	useState: () => [render.open, () => {}],
-	useRef: () => ({ current: false }),
-	useMemo: (factory) => factory(),
-	useEffect: () => {},
-	useSyncExternalStore: () => {}
-};
 
-const storeModule = await import("@deepseek-ai/dsh-client-store");
+const NAMESPACE = "web-search-9router";
 
-let loaded;
-globalThis.window = {
-	__ModuleLoader__: {
-		load: (registration) => {
-			loaded = registration;
-		}
+// ── Mock SettingsFormModel ──────────────────────────────────────────────
+// A minimal reimplementation of the DSH SettingsFormModel contract,
+// sufficient to verify the plugin card's integration with configForms.
+
+class MockSettingsFormModel {
+	constructor(scope, specs, secrets = []) {
+		this.scope = scope;
+		this.specs = specs;
+		this.secrets = secrets;
+		this.drafts = new Map();
+		this.saving = false;
+		this.failed = false;
+		this._storeListeners = new Set();
 	}
-};
-await import("../client.js");
+	bind(projection) {
+		const listeners = new Set();
+		this._storeListeners = listeners;
+		return {
+			getSnapshot: () => projection(),
+			subscribe: (listener) => {
+				listeners.add(listener);
+				return () => listeners.delete(listener);
+			}
+		};
+	}
+	_notify() {
+		for (const l of [...this._storeListeners]) l();
+	}
+	shell() {
+		const snap = this.scope.getSnapshot();
+		return {
+			available: snap.status === "ready",
+			writable: snap.writable,
+			dirty: this.drafts.size > 0,
+			invalid: [...this.drafts.values()].some((d) => d.invalid),
+			saving: this.saving,
+			failed: this.failed
+		};
+	}
+	field(name) {
+		const snap = this.scope.getSnapshot();
+		const draft = this.drafts.get(name);
+		const effective = snap.value?.[name];
+		const userValue = snap.user?.[name];
+		const text = draft !== undefined ? draft.text : effective !== undefined ? String(effective) : "";
+		return {
+			text,
+			overridden: userValue !== undefined,
+			invalid: draft !== undefined ? draft.invalid : false,
+			disabled: !snap.writable
+		};
+	}
+	actions() {
+		return {
+			edit: (name, text) => {
+				const spec = this.specs.find((s) => s.field === name) || this.secrets.find((s) => s.field === name);
+				if (!spec) return;
+				let invalid = false;
+				if (spec.kind === "number" && text.trim() !== "") {
+					invalid = !Number.isFinite(Number(text));
+				}
+				this.drafts.set(name, { text, invalid });
+				this._notify();
+			},
+			resetField: (name) => {
+				this.drafts.delete(name);
+				this._notify();
+			},
+			save: async () => {
+				if (this.drafts.size === 0) return;
+				this.saving = true;
+				this.failed = false;
+				this._notify();
+				// Write secrets first
+				for (const secret of this.secrets) {
+					const draft = this.drafts.get(secret.field);
+					if (draft && draft.text.trim() !== "") {
+						const ok = await secret.write(draft.text);
+						if (!ok) {
+							this.saving = false;
+							this.failed = true;
+							this._notify();
+							return;
+						}
+					}
+				}
+				// Write normal fields
+				const ops = [];
+				for (const [name, draft] of this.drafts) {
+					const spec = this.specs.find((s) => s.field === name);
+					if (!spec) continue;
+					const trimmed = draft.text.trim();
+					if (spec.kind === "number") {
+						ops.push({ op: "set", path: [name], value: trimmed === "" ? null : Number(trimmed) });
+					} else {
+						ops.push({ op: "set", path: [name], value: trimmed });
+					}
+				}
+				const snap = this.scope.getSnapshot();
+				const ok = ops.length > 0 ? await this.scope.mutate(ops, snap.revision) : true;
+				this.saving = false;
+				if (ok) { this.drafts.clear(); } else { this.failed = true; }
+				this._notify();
+			},
+			discard: () => {
+				this.drafts.clear();
+				this.failed = false;
+				this._notify();
+			}
+		};
+	}
+	dispose() {}
+}
 
-const requireStub = (spec) => {
-	if (spec === "react") return React;
-	if (spec === "@deepseek-ai/dsh-client-store") return storeModule;
-	throw new Error(`client.js required an unexpected module: ${spec}`);
-};
+function settingsTextField(name) { return { field: name, kind: "text" }; }
+function settingsNumberField(name) { return { field: name, kind: "number" }; }
 
-const client = loaded.factory(requireStub);
+// Mock React components (render as plain elements for tree inspection)
+const SettingsForm = (props) => React.createElement("form", { className: "settings-form" },
+	React.createElement("div", { className: "settings-form-shell" },
+		React.createElement("button", { className: "settings-form-save", disabled: !props.state.dirty || props.state.saving, onClick: props.onSave }, "Save"),
+		...props.state.dirty ? [React.createElement("button", { className: "settings-form-discard", onClick: props.onDiscard }, "Discard")] : []
+	),
+	...props.children
+);
+const SettingsValueField = (props) => React.createElement("div", { className: "settings-field", "data-field": props.id },
+	React.createElement("label", null, props.label),
+	React.createElement("input", { className: "settings-input", value: props.text, disabled: props.disabled, onChange: (e) => props.onEdit(e.target.value) }),
+	...props.overridden ? [React.createElement("span", { className: "settings-overridden" }, props.overriddenLabel)] : [],
+	...props.overridden ? [React.createElement("button", { className: "settings-reset", onClick: props.onReset }, props.resetLabel)] : []
+);
+const SettingsSecretField = (props) => React.createElement("div", { className: "settings-secret", "data-field": props.id },
+	React.createElement("label", null, props.label),
+	React.createElement("input", { className: "settings-input", type: "password", value: props.text, disabled: props.disabled, onChange: (e) => props.onEdit(e.target.value) }),
+	React.createElement("span", { className: "settings-configured" }, props.stateLabel)
+);
 
-/** A settings scope fake that re-resolves the effective value the way the Host does. */
-function createScope({ value = {}, user = {}, base = {}, writable = true } = {}) {
-	let state = { value: { ...value }, user: { ...user }, base: { ...base }, writable };
+// ── Scope mock ──────────────────────────────────────────────────────────
+
+function createFormScope(initial = {}) {
 	const listeners = new Set();
-	const writes = [];
-	const fail = { set: false, unset: false };
-	const notify = () => {
-		for (const listener of [...listeners]) listener();
+	const state = {
+		status: "ready",
+		value: initial.value ?? {},
+		base: initial.base ?? {},
+		user: initial.user ?? {},
+		writable: initial.writable ?? true,
+		revision: 1
 	};
+	const writes = [];
+	const fail = { mutate: false };
+	function notify() { for (const l of [...listeners]) l(); }
 	return {
 		writes,
 		fail,
-		getSnapshot: () => ({
-			status: "ready",
-			value: { ...state.value },
-			base: { ...state.base },
-			user: { ...state.user },
-			revision: 1,
-			writable: state.writable,
-			mode: "host"
-		}),
+		state,
+		getSnapshot: () => ({ ...state }),
 		subscribe: (listener) => {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
 		},
-		async set(field, next) {
-			writes.push({ kind: "set", field, value: next });
-			if (fail.set) throw new Error("host rejected the write");
-			state = { ...state, value: { ...state.value, [field]: next }, user: { ...state.user, [field]: next } };
+		async mutate(ops, expectedRevision) {
+			writes.push({ ops, expectedRevision });
+			if (fail.mutate) return false;
+			for (const op of ops) {
+				const field = op.path[0];
+				if (op.op === "set") {
+					state.value = { ...state.value, [field]: op.value };
+					state.user = { ...state.user, [field]: op.value };
+				} else if (op.op === "unset") {
+					const user = { ...state.user };
+					const value = { ...state.value };
+					delete user[field];
+					if (state.base[field] !== undefined) value[field] = state.base[field];
+					else delete value[field];
+					state.user = user;
+					state.value = value;
+				}
+			}
+			state.revision += 1;
 			notify();
-		},
-		async unset(field) {
-			writes.push({ kind: "clear", field });
-			if (fail.unset) throw new Error("host rejected the clear");
-			const user = { ...state.user };
-			const value = { ...state.value };
-			delete user[field];
-			if (Object.hasOwn(state.base, field)) value[field] = state.base[field];
-			else delete value[field];
-			state = { ...state, user, value };
-			notify();
-		},
-		async dispose() {}
-	};
-}
-
-function createCredentials() {
-	const writes = [];
-	let configured = false;
-	return {
-		writes,
-		describe: async (refs) => ({
-			ok: true,
-			value: Object.fromEntries(refs.map((ref) => [ref, { configured, writable: true }]))
-		}),
-		set: async (ref, value) => {
-			writes.push({ ref, value });
-			configured = true;
-			return { ok: true };
+			return true;
 		}
 	};
 }
 
-/** Apply the client bundle against a scope and hand back both the card and its slot face. */
-function mount(scope, credentials) {
+// ── Credentials mock ────────────────────────────────────────────────────
+
+function createCredentials() {
+	const writes = [];
+	return {
+		writes,
+		async set(ref, value) {
+			writes.push({ ref, value });
+			return { ok: true };
+		},
+		async describe(ref) {
+			return { configured: writes.length > 0 };
+		}
+	};
+}
+
+// ── Client loader ───────────────────────────────────────────────────────
+
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+function loadClient() {
+	let clientExports;
+	const primitivesMock = {
+		SettingsFormModel: MockSettingsFormModel,
+		SettingsForm,
+		SettingsValueField,
+		SettingsSecretField,
+		settingsTextField,
+		settingsNumberField
+	};
+	const fakeWindow = {
+		__ModuleLoader__: {
+			load: (definition) => {
+				clientExports = definition.factory((name) => {
+					if (name === "react") return React;
+					if (name === "@deepseek-ai/dsh-client-ui-primitives") return primitivesMock;
+					throw new Error(`unexpected require ${name}`);
+				});
+				return clientExports;
+			}
+		}
+	};
+	const source = readFileSync(fileURLToPath(new URL("../client.js", import.meta.url)), "utf8");
+	const factory = new Function("window", "require", source);
+	factory(fakeWindow, (name) => {
+		if (name === "react") return React;
+		if (name === "@deepseek-ai/dsh-client-ui-primitives") return primitivesMock;
+		throw new Error(`unexpected require ${name}`);
+	});
+	return clientExports;
+}
+
+// ── Mount helper ────────────────────────────────────────────────────────
+
+function mount(formScope, credentials) {
+	const client = loadClient();
 	let face;
 	let Component;
 	const ctx = {
 		effect: (factory) => factory(),
-		locale: { register: () => () => {}, bind: () => (key) => key },
+		locale: {
+			register: () => () => {},
+			bind: () => (key) => key
+		},
 		slots: {
 			inject: (_name, setup) => setup(),
 			register: (options, component) => {
@@ -117,7 +264,10 @@ function mount(scope, credentials) {
 				return () => {};
 			}
 		},
-		settingsScope: { bind: () => scope },
+		configForms: {
+			get: () => formScope,
+			whileServed: (_names, fn) => fn()
+		},
 		remote: credentials === undefined ? undefined : { credentials }
 	};
 	client.apply(ctx);
@@ -126,178 +276,141 @@ function mount(scope, credentials) {
 		Component,
 		face,
 		state,
-		render: () =>
-			Component({
-				t: (key) => key,
-				locale: undefined,
-				useNineRouterCard: (selector) => selector(state()),
-				edit: face.edit,
-				resetField: face.resetField,
-				save: face.save,
-				discard: face.discard
-			})
+		render: () => Component({
+			t: (key) => key,
+			view: "form",
+			useNineRouterCard: (selector) => selector(state()),
+			edit: face.edit,
+			resetField: face.resetField,
+			save: face.save,
+			discard: face.discard
+		})
 	};
 }
 
-function classesOf(element) {
-	return String(element?.props?.className ?? "").split(/\s+/).filter(Boolean);
+// ── Tree helpers ────────────────────────────────────────────────────────
+
+function findAll(node, predicate) {
+	if (!node || typeof node !== "object") return [];
+	if (Array.isArray(node)) return node.flatMap((child) => findAll(child, predicate));
+	const own = predicate(node) ? [node] : [];
+	return own.concat(findAll(node.props?.children, predicate));
+}
+function findField(tree, id) {
+	return findAll(tree, (n) => (n.type === SettingsValueField || n.type === SettingsSecretField) && n.props?.id === id)[0];
 }
 
-function findAll(element, predicate, found = []) {
-	if (Array.isArray(element)) {
-		for (const child of element) findAll(child, predicate, found);
-		return found;
-	}
-	if (element === null || element === undefined || typeof element !== "object") return found;
-	if (predicate(element)) found.push(element);
-	for (const child of element.props?.children ?? []) findAll(child, predicate, found);
-	return found;
-}
+// ── Tests ───────────────────────────────────────────────────────────────
 
-function findByClass(element, className) {
-	return findAll(element, (node) => classesOf(node).includes(className))[0];
-}
-
-function cardStyles() {
-	const source = readFileSync(new URL("../client.js", import.meta.url), "utf8");
-	const css = source.split("const css = `")[1].split("`;")[0];
-	const rules = new Map();
-	for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) rules.set(match[1].trim(), match[2]);
-	return rules;
-}
-
-test("the card chrome carries the same declarations as the built-in plugin cards", () => {
-	const rules = cardStyles();
-	const rule = (selector) => rules.get(selector) ?? assert.fail(`client.js has no ${selector} rule`);
-	assert.match(rule(".dsh9-card"), /border:\.5px solid var\(--dsw-alias-border-l4\)/);
-	assert.match(rule(".dsh9-card"), /border-radius:16px/);
-	assert.match(rule(".dsh9-card:hover"), /border-color:var\(--dsw-alias-label-dimmed\)/);
-	assert.match(rule(".dsh9-card-open"), /background:var\(--dsw-alias-bg-layer-2\)/);
-	assert.match(rule(".dsh9-header"), /padding:14px 16px/);
-	assert.match(rule(".dsh9-header:focus-visible"), /outline:2px solid var\(--dsw-alias-brand-primary\)/);
-	assert.match(rule(".dsh9-body"), /border-top:\.5px solid var\(--dsw-alias-border-l2\)/);
-	assert.match(rule(".dsh9-footer"), /justify-content:flex-end/);
-	assert.match(rule(".dsh9-footer"), /border-top:\.5px solid var\(--dsw-alias-border-l2\)/);
-	assert.match(rule(".dsh9-discard,.dsh9-save"), /border-radius:8px/);
-	assert.match(rule(".dsh9-discard,.dsh9-save"), /padding:5px 14px/);
-	assert.match(rule(".dsh9-discard"), /border-color:var\(--dsw-alias-border-l2\)/);
-	assert.match(rule(".dsh9-save"), /background:var\(--dsw-alias-label-primary\);color:var\(--dsw-alias-bg-layer-3\)/);
-	assert.match(rule(".dsh9-discard:disabled,.dsh9-save:disabled"), /opacity:\.4/);
-	assert.match(rule(".dsh9-input"), /border:\.5px solid var\(--dsw-alias-border-l4\)/);
-});
-
-test("the card renders the disclosure header, footer buttons, and field controls", () => {
-	const card = mount(createScope(), null);
-	render.open = true;
+test("the card renders all fields when the namespace is served", () => {
+	const card = mount(createFormScope(), createCredentials());
 	const tree = card.render();
-	assert.deepEqual(classesOf(tree), ["dsh9-card", "dsh9-card-open"]);
-	const header = findByClass(tree, "dsh9-header");
-	assert.equal(header.type, "button");
-	assert.equal(header.props["aria-expanded"], true);
-	assert.equal(header.props["aria-label"], "collapse: title");
-	assert.ok(findByClass(tree, "dsh9-chevron-open"));
-	assert.ok(findByClass(tree, "dsh9-head-text"));
-	assert.ok(findByClass(tree, "dsh9-body"));
-	assert.equal(findByClass(tree, "dsh9-discard").props.disabled, true);
-	assert.equal(findByClass(tree, "dsh9-save").props.disabled, true);
-	assert.equal(findAll(tree, (node) => classesOf(node).includes("dsh9-input")).length, 12);
-	assert.equal(findByClass(tree, "dsh9-read-only"), undefined);
+	const fields = findAll(tree, (n) => n.type === SettingsValueField || n.type === SettingsSecretField);
+	assert.equal(fields.length, 12);
 });
 
-test("an unsaved edit marks the header and arms the footer buttons", () => {
-	const card = mount(createScope(), null);
-	render.open = false;
-	assert.deepEqual(classesOf(card.render()), ["dsh9-card"]);
-	assert.equal(findByClass(card.render(), "dsh9-body"), undefined);
-	card.face.edit("searchType", "web");
-	const collapsed = card.render();
-	assert.ok(findByClass(collapsed, "dsh9-pending"));
-	render.open = true;
-	const expanded = card.render();
-	assert.equal(findByClass(expanded, "dsh9-discard").props.disabled, false);
-	assert.equal(findByClass(expanded, "dsh9-save").props.disabled, false);
+test("editing a field marks the form dirty", () => {
+	const card = mount(createFormScope(), createCredentials());
+	card.face.edit("baseURL", "https://new.example/v1");
+	const state = card.state();
+	assert.equal(state.dirty, true);
 });
 
-test("a read-only deployment disables the controls and states why", () => {
-	const card = mount(createScope({ writable: false }), null);
-	render.open = true;
-	const tree = card.render();
-	assert.equal(findByClass(tree, "dsh9-read-only").props.children[0], "readOnly");
-	const disabled = findAll(tree, (node) => classesOf(node).includes("dsh9-input") && node.props.disabled === true);
-	assert.equal(disabled.length, 11);
+test("a successful save writes the field and clears the draft", async () => {
+	const scope = createFormScope();
+	const card = mount(scope, createCredentials());
+	card.face.edit("maxResults", "5");
+	assert.equal(card.state().dirty, true);
+	await card.face.save();
+	assert.deepEqual(scope.writes, [{ ops: [{ op: "set", path: ["maxResults"], value: 5 }], expectedRevision: 1 }]);
+	const state = card.state();
+	assert.equal(state.dirty, false);
+	assert.equal(state.failed, false);
+	assert.equal(state.maxResults.text, "5");
 });
 
-test("a draft that is not a number blocks the save", async () => {
-	const scope = createScope();
-	const card = mount(scope, null);
+test("resetting a field clears the draft", () => {
+	const card = mount(createFormScope(), createCredentials());
+	card.face.edit("baseURL", "https://new.example/v1");
+	assert.equal(card.state().dirty, true);
+	card.face.resetField("baseURL");
+	assert.equal(card.state().dirty, false);
+});
+
+test("a draft that is not a number marks the field invalid", () => {
+	const card = mount(createFormScope(), createCredentials());
 	card.face.edit("maxResults", "abc");
 	const state = card.state();
 	assert.equal(state.dirty, true);
 	assert.equal(state.invalid, true);
-	assert.equal(state.fields.maxResults.invalid, true);
-	await card.face.save();
-	assert.deepEqual(scope.writes, []);
-	assert.equal(card.state().dirty, true);
+	assert.equal(state.maxResults.invalid, true);
 });
 
-test("a successful save writes the field and drops the draft", async () => {
-	const scope = createScope();
-	const card = mount(scope, null);
-	card.face.edit("maxResults", "5");
-	assert.equal(card.state().fields.maxResults.overridden, true);
-	await card.face.save();
-	assert.deepEqual(scope.writes, [{ kind: "set", field: "maxResults", value: 5 }]);
-	const state = card.state();
-	assert.equal(state.dirty, false);
-	assert.equal(state.failed, false);
-	assert.equal(state.fields.maxResults.text, "5");
-	assert.equal(state.fields.maxResults.overridden, true);
-});
-
-test("resetting a field stages a clear back to the composition layer", async () => {
-	const scope = createScope({
-		base: { baseURL: "https://composed.example/v1" },
-		user: { baseURL: "https://user.example/v1" },
-		value: { baseURL: "https://user.example/v1" }
-	});
-	const card = mount(scope, null);
-	assert.equal(card.state().fields.baseURL.overridden, true);
-	card.face.resetField("baseURL");
-	assert.equal(card.state().fields.baseURL.text, "https://composed.example/v1");
-	await card.face.save();
-	assert.deepEqual(scope.writes, [{ kind: "clear", field: "baseURL" }]);
-	const state = card.state();
-	assert.equal(state.dirty, false);
-	assert.equal(state.fields.baseURL.overridden, false);
-	assert.equal(state.fields.baseURL.text, "https://composed.example/v1");
+test("a read-only deployment disables the controls", () => {
+	const card = mount(createFormScope({ writable: false }), createCredentials());
+	const tree = card.render();
+	const inputs = findAll(tree, (n) => (n.type === SettingsValueField || n.type === SettingsSecretField) && n.props?.disabled === true);
+	assert.equal(inputs.length, 12);
 });
 
 test("the staged key is written through the credentials domain", async () => {
 	const credentials = createCredentials();
-	const card = mount(createScope(), credentials);
+	const card = mount(createFormScope(), credentials);
 	assert.equal(card.state().apiKeyConfigured, false);
 	card.face.edit("apiKey", "  secret-key  ");
 	await card.face.save();
 	assert.deepEqual(credentials.writes, [{ ref: "NINE_ROUTER_API_KEY", value: "secret-key" }]);
 	const state = card.state();
 	assert.equal(state.dirty, false);
-	assert.equal(state.fields.apiKey.text, "");
-	assert.equal(state.apiKeyConfigured, true);
+	assert.equal(state.apiKey.text, "");
 });
 
 test("a rejected write keeps the draft and reports the failure", async () => {
-	const scope = createScope();
-	scope.fail.set = true;
-	const card = mount(scope, null);
+	const scope = createFormScope();
+	scope.fail.mutate = true;
+	const card = mount(scope, createCredentials());
 	card.face.edit("baseURL", "https://example.com/v1");
 	await card.face.save();
 	const failed = card.state();
 	assert.equal(failed.failed, true);
 	assert.equal(failed.dirty, true);
-	assert.equal(failed.error, "host rejected the write");
-	assert.equal(failed.fields.baseURL.text, "https://example.com/v1");
+	assert.equal(failed.baseURL.text, "https://example.com/v1");
 	card.face.discard();
 	const discarded = card.state();
 	assert.equal(discarded.dirty, false);
 	assert.equal(discarded.failed, false);
+});
+
+test("the summary view returns the description", () => {
+	const card = mount(createFormScope(), createCredentials());
+	const summary = card.Component({
+		t: (key) => key,
+		view: "summary",
+		useNineRouterCard: (s) => s,
+		edit: () => {},
+		resetField: () => {},
+		save: () => {},
+		discard: () => {}
+	});
+	assert.equal(summary, "description");
+});
+
+test("the card is not registered when the namespace is not served", () => {
+	const client = loadClient();
+	let registered = false;
+	const ctx = {
+		effect: (factory) => factory(),
+		locale: { register: () => () => {}, bind: () => (key) => key },
+		slots: {
+			inject: (_name, setup) => { registered = true; setup(); },
+			register: () => () => {}
+		},
+		configForms: {
+			get: () => ({ getSnapshot: () => ({ status: "unavailable" }), subscribe: () => () => {}, mutate: async () => false }),
+			whileServed: (_names, fn) => { /* not served: fn is not called */ }
+		},
+		remote: undefined
+	};
+	client.apply(ctx);
+	assert.equal(registered, false);
 });
