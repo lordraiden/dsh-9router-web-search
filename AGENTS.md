@@ -30,6 +30,7 @@ Useful commands:
 ```bash
 pnpm install
 pnpm test
+node scripts/validate-pack.mjs   # packaging validation (release-related changes)
 ```
 
 Run the relevant tests after every behavioral change. Do not claim compatibility with a DSH version that has not been verified.
@@ -53,7 +54,7 @@ Preserve the contracts of `@deepseek-ai/dsh-web` rather than inventing a paralle
 - `truncated` must mean that content or sources were actually truncated;
 - aborts and timeouts must remain distinguishable from ordinary provider failures where the DSH API permits it.
 
-Prefer the current DSH APIs and patterns documented by the installed DSH version. Do not introduce new dependencies on legacy APIs such as `settingsScope` when implementing or refactoring the settings UI.
+Prefer the current DSH APIs and patterns documented by the installed DSH version. Compatibility is declared by the peer range (`>=0.1.7-rc.1 <1.0.0`) and verified by CI, which runs the suite against the committed peers and the latest `0.2.x`; never document a version that has not been exercised.
 
 ### Client-side settings
 

@@ -51,10 +51,13 @@ This plugin calls 9router's own endpoints directly and maps their responses to t
    └── fetch   → POST {baseURL}/web/fetch   → WebFetchBody
             │
             ▼
-      9router gateway (9router)
+      9router gateway
+            │
+            ▼
+   9router providers / model combos
 ```
 
-Errors surface as machine-routable `WebError` codes (`WEB_PROVIDER_ERROR`, `WEB_ABORTED`); transient network and 5xx failures are retried with backoff; non-2xx fetch responses come back as results — never silent throws.
+Errors surface as machine-routable `WebError` codes (`WEB_PROVIDER_ERROR`, `WEB_TIMEOUT`, `WEB_ABORTED`, `WEB_PROVIDER_CREDENTIAL_MISSING`); transient network and 5xx failures are retried with backoff; non-2xx fetch responses come back as results — never silent throws.
 
 ## 🚀 Quick start
 
@@ -68,7 +71,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-
 
 - The plugin's bundle patch already pins `web.searchProvider` and `web.fetchProvider` to `9router` — no manual wiring needed (a profile's own `cordis.patch.yml` can override the row).
 - Set a `baseURL` in the settings card (or a `NINE_ROUTER_BASE_URL` environment value) pointing at your 9router gateway — there is no implicit fallback endpoint; without a configured endpoint the provider reports itself unavailable.
-- If your 9router instance requires a key, store it in `~/.dsh/.credentials.yaml` as `NINE_ROUTER_API_KEY`, or set a literal `apiKey` in the plugin settings. Keyless instances work without any credential.
+- If your 9router instance requires a key, store `NINE_ROUTER_API_KEY` in DSH's credentials — the settings card's API key field writes it there — or set a literal `apiKey` in the plugin settings. The secret is write-only in the UI and is never stored in this repo. Keyless instances work without any credential.
 
 **3. Restart & refresh**
 
@@ -101,28 +104,55 @@ Self-hosted 9router picks its search and fetch backends from its own provider co
 
 **Endpoint precedence** — an explicit `baseURL` setting wins over the `NINE_ROUTER_BASE_URL` environment value; with neither set, no endpoint exists and the providers report themselves unavailable. There is no silent fallback to a repository-chosen remote. The schema rejects non-http(s) URLs, empty model/format strings, and non-positive numeric limits before any request is made.
 
+**Credentials** — `NINE_ROUTER_API_KEY` is resolved through DSH's credentials service; a literal `apiKey` is optional and wins when set. `apiKeyEnv` is a reference name in the credentials service, not a key. The secret is write-only in the settings UI, is never stored in git, and never appears in logs, diagnostics, or error messages.
+
+## 📌 DSH compatibility
+
+| | Version |
+|---|---|
+| Minimum supported | `0.1.7-rc.1` (peer range `>=0.1.7-rc.1 <1.0.0`) |
+| Latest tested | the newest published `0.2.x` — CI installs it (currently `0.2.0-rc.2`) and runs the full suite against it |
+
+CI runs the contract suite twice: once against the committed peer ranges, and once against the latest `0.2.x`. Versions outside the declared range — including future `1.x` releases — are **not** claimed compatible until they are exercised the same way.
+
+## 🛡️ 9router security
+
+The `web_fetch` capability delegates URL extraction and SSRF protection to the 9router **server**: the plugin sends the target URL to `POST /v1/web/fetch` and trusts the gateway's fetch boundary. It implements no local SSRF policy of its own.
+
+Run a patched, current 9router release — the fetch endpoint has a published security advisory:
+
+- [GHSA-qj3v-64wj-q825](https://github.com/decolua/9router/security/advisories/GHSA-qj3v-64wj-q825)
+
 ## 🧪 Development
 
 ```bash
-pnpm install   # install dependencies
-pnpm test      # run the test suite (node:test)
+pnpm install                 # install dependencies
+pnpm test                    # run the test suite (node:test)
+node scripts/validate-pack.mjs  # validate the packaged artifact
 ```
+
+Node `>=20` (CI runs Node 22) and pnpm (CI uses pnpm 10).
 
 **Repository layout**
 
 ```text
 dsh-9router-web-search/
-├── src/index.js       # plugin entry: search + fetch providers
-├── client.js          # settings card
-├── cordis.patch.yml   # bundle patch registering the plugin
-├── test/              # node --test suite
-└── package.json       # ESM plugin manifest
+├── src/                     # server-side plugin: index.js + nine-router-client.js
+├── client.js                # settings card
+├── cordis.patch.yml         # bundle patch registering the plugin
+├── test/                    # node --test contract suite
+├── scripts/                 # validate-pack.mjs, sync-storefront.mjs
+├── .github/workflows/       # CI (tests + packaging, DSH 0.2.x compat) and release
+└── package.json             # ESM plugin manifest
 ```
+
+**Releases** — stable versions ship as `v<version>` GitHub Releases matching `package.json`; the release workflow re-runs the full suite and packaging validation against the tag before publishing.
+
+**Storefront sync** — `node scripts/sync-storefront.mjs` syncs the plugin entry into the storefront repo (manual; requires push access to the configured storefront fork).
 
 ## 🌱 Ecosystem & releases
 
 - 📦 **Distribution** — the GitHub repository is the only distribution source; stable versions ship as `v<version>` GitHub Releases.
-- 📚 **Directory** — listed in [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin).
 - 🐛 **Issues & requests** — open an [issue](https://github.com/lordraiden/dsh-9router-web-search/issues).
 
 ## 📄 License
