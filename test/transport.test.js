@@ -45,13 +45,18 @@ const SEARCH_OK = () => jsonResponse(200, {
 });
 
 // A fetch that hangs until the composed abort signal fires, then rejects
-// with an AbortError — the shape a real transport produces.
+// with an AbortError — the shape a real transport produces. A ref'd interval
+// keeps the event loop alive until the abort settles the promise: the per-op
+// timeout signal's own timer is unref'd, so without this the loop can drain
+// (and node:test can cancel the test) before the abort dispatch runs under load.
 function hangingFetch() {
 	return (_calls, _endpoint, init) =>
 		new Promise((_resolve, reject) => {
+			const keepAlive = setInterval(() => {}, 1000);
 			init.signal.addEventListener("abort", () => {
+				clearInterval(keepAlive);
 				reject(new DOMException("The operation was aborted", "AbortError"));
-			});
+			}, { once: true });
 		});
 }
 
