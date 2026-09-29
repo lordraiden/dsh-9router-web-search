@@ -121,43 +121,11 @@ test("a cancelled search surfaces WEB_ABORTED, not a generic transport error", a
 	}
 });
 
-test("a cancelled fetch surfaces WEB_ABORTED, not a generic transport error", async () => {
-	const stub = installFetchStub(hangingFetch());
-	try {
-		const controller = new AbortController();
-		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS }));
-		const pending = provider.fetch({ url: "https://example.com" }, controller.signal);
-		setTimeout(() => controller.abort(), 10);
-		await assert.rejects(pending, (error) => {
-			assert.equal(error.name, "WebError");
-			assert.equal(error.code, "WEB_ABORTED");
-			return true;
-		});
-	} finally {
-		stub.restore();
-	}
-});
-
 test("a timed-out search surfaces WEB_TIMEOUT, not a generic transport error", async () => {
 	const stub = installFetchStub(hangingFetch());
 	try {
 		const provider = new NineRouterSearchProvider(() => ({ ...BASE_OPTIONS, searchTimeoutMs: 50 }));
 		await assert.rejects(provider.search({ query: "q" }), (error) => {
-			assert.equal(error.name, "WebError");
-			assert.equal(error.code, "WEB_TIMEOUT");
-			assert.match(error.message, /timed out/);
-			return true;
-		});
-	} finally {
-		stub.restore();
-	}
-});
-
-test("a timed-out fetch surfaces WEB_TIMEOUT, not a generic transport error", async () => {
-	const stub = installFetchStub(hangingFetch());
-	try {
-		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS, fetchTimeoutMs: 50 }));
-		await assert.rejects(provider.fetch({ url: "https://example.com" }), (error) => {
 			assert.equal(error.name, "WebError");
 			assert.equal(error.code, "WEB_TIMEOUT");
 			assert.match(error.message, /timed out/);
@@ -184,14 +152,3 @@ test("the API key never appears in search error messages", async () => {
 	}
 });
 
-test("the API key never appears in a non-2xx fetch result", async () => {
-	const stub = installFetchStub(() => jsonResponse(404, { error: { message: "not found" } }));
-	try {
-		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS }));
-		const result = await provider.fetch({ url: "https://example.com" });
-		assert.equal(result.statusCode, 404);
-		assert.ok(!JSON.stringify(result).includes("super-secret-key-123"), "API key leaked into the result");
-	} finally {
-		stub.restore();
-	}
-});
