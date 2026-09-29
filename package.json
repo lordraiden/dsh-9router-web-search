@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-9router",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "9router-backed web search + fetch providers for DeepSeek Harness (ctx.web). Wires the native web_search/web_fetch tools to 9router's /v1/search and /v1/web/fetch endpoints.",
   "keywords": [
     "deepseek-harness",

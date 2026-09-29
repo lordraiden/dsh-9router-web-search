@@ -45,3 +45,32 @@ test("throws on a non-empty errors array", () => {
 test("throws when results is not an array", () => {
 	assert.throws(() => mapSearchResponse({ results: "nope", errors: [] }), /no results array/);
 });
+
+test("derives truncated from metrics.total_results_available", () => {
+	const result = mapSearchResponse({
+		results: [
+			{ title: "A", url: "https://example.com/a" },
+			{ title: "B", url: "https://example.com/b" }
+		],
+		errors: [],
+		metrics: { total_results_available: 42 }
+	});
+	assert.equal(result.truncated, true);
+});
+
+test("keeps truncated false when total_results_available matches the result count", () => {
+	const result = mapSearchResponse({
+		results: [{ title: "A", url: "https://example.com/a" }],
+		errors: [],
+		metrics: { total_results_available: 1 }
+	});
+	assert.equal(result.truncated, false);
+});
+
+test("keeps truncated false without metrics", () => {
+	const result = mapSearchResponse({
+		results: [{ title: "A", url: "https://example.com/a" }],
+		errors: []
+	});
+	assert.equal(result.truncated, false);
+});
