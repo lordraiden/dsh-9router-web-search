@@ -6,6 +6,8 @@
 
 **Purpose:** DSH plugin that registers 9router-backed web search and web fetch providers with the `ctx.web` seam. The plugin maps DSH's native web operations to 9router's `/v1/search` and `/v1/web/fetch` endpoints.
 
+**Working language:** English. Issue and pull-request titles and bodies are written in English, the repository's working language for tracked work, regardless of the language a contributor uses in conversation.
+
 ### Key entry points
 
 - `src/index.js` — server-side Cordis plugin, configuration, credential resolution, and web providers.
