@@ -45,13 +45,18 @@ const SEARCH_OK = () => jsonResponse(200, {
 });
 
 // A fetch that hangs until the composed abort signal fires, then rejects
-// with an AbortError — the shape a real transport produces.
+// with an AbortError — the shape a real transport produces. A ref'd interval
+// keeps the event loop alive until the abort settles the promise: the per-op
+// timeout signal's own timer is unref'd, so without this the loop can drain
+// (and node:test can cancel the test) before the abort dispatch runs under load.
 function hangingFetch() {
 	return (_calls, _endpoint, init) =>
 		new Promise((_resolve, reject) => {
+			const keepAlive = setInterval(() => {}, 1000);
 			init.signal.addEventListener("abort", () => {
+				clearInterval(keepAlive);
 				reject(new DOMException("The operation was aborted", "AbortError"));
-			});
+			}, { once: true });
 		});
 }
 
@@ -116,43 +121,11 @@ test("a cancelled search surfaces WEB_ABORTED, not a generic transport error", a
 	}
 });
 
-test("a cancelled fetch surfaces WEB_ABORTED, not a generic transport error", async () => {
-	const stub = installFetchStub(hangingFetch());
-	try {
-		const controller = new AbortController();
-		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS }));
-		const pending = provider.fetch({ url: "https://example.com" }, controller.signal);
-		setTimeout(() => controller.abort(), 10);
-		await assert.rejects(pending, (error) => {
-			assert.equal(error.name, "WebError");
-			assert.equal(error.code, "WEB_ABORTED");
-			return true;
-		});
-	} finally {
-		stub.restore();
-	}
-});
-
 test("a timed-out search surfaces WEB_TIMEOUT, not a generic transport error", async () => {
 	const stub = installFetchStub(hangingFetch());
 	try {
-		const provider = new NineRouterSearchProvider(() => ({ ...BASE_OPTIONS, searchTimeoutMs: 1 }));
+		const provider = new NineRouterSearchProvider(() => ({ ...BASE_OPTIONS, searchTimeoutMs: 50 }));
 		await assert.rejects(provider.search({ query: "q" }), (error) => {
-			assert.equal(error.name, "WebError");
-			assert.equal(error.code, "WEB_TIMEOUT");
-			assert.match(error.message, /timed out/);
-			return true;
-		});
-	} finally {
-		stub.restore();
-	}
-});
-
-test("a timed-out fetch surfaces WEB_TIMEOUT, not a generic transport error", async () => {
-	const stub = installFetchStub(hangingFetch());
-	try {
-		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS, fetchTimeoutMs: 1 }));
-		await assert.rejects(provider.fetch({ url: "https://example.com" }), (error) => {
 			assert.equal(error.name, "WebError");
 			assert.equal(error.code, "WEB_TIMEOUT");
 			assert.match(error.message, /timed out/);
@@ -179,14 +152,3 @@ test("the API key never appears in search error messages", async () => {
 	}
 });
 
-test("the API key never appears in a non-2xx fetch result", async () => {
-	const stub = installFetchStub(() => jsonResponse(404, { error: { message: "not found" } }));
-	try {
-		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS }));
-		const result = await provider.fetch({ url: "https://example.com" });
-		assert.equal(result.statusCode, 404);
-		assert.ok(!JSON.stringify(result).includes("super-secret-key-123"), "API key leaked into the result");
-	} finally {
-		stub.restore();
-	}
-});

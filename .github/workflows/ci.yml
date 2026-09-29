@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Supply-chain note: external actions are intentionally kept on major tags
+# (checkout, setup-node, pnpm setup) rather than pinned to SHAs; the surface
+# is the three actions below and no secrets are exposed to them.
+
+jobs:
+  test:
+    name: tests + packaging
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Validate packaged artifact
+        run: node scripts/validate-pack.mjs
+
+  compat-latest:
+    name: DSH 0.2x compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Resolve the latest DSH 0.2.x version
+        run: |
+          version=$(npm view @deepseek-ai/dsh-web versions --json | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const v=JSON.parse(d).filter(x=>x.startsWith('0.2.'));if(!v.length)process.exit(1);v.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));console.log(v[v.length-1])})")
+          echo "Latest DSH 0.2.x: ${version}"
+          echo "DSH_VERSION=${version}" >> "${GITHUB_ENV}"
+
+      - name: Pin peer ranges to the latest DSH 0.2.x
+        run: |
+          node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));for(const name of Object.keys(pkg.peerDependencies)){pkg.peerDependencies[name]='>=${DSH_VERSION} <0.3.0'}fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n')"
+          # The peer ranges were just rewritten to the latest 0.2.x, so the committed
+          # lockfile no longer matches package.json. This job deliberately installs the
+          # latest peers in an ephemeral CI workspace (the regenerated lockfile is never
+          # committed), so frozen-lockfile is intentionally disabled here — unlike the
+          # `test` job, which installs the committed source as-is.
+          pnpm install --no-frozen-lockfile
+
+      - name: Run the contract suite against DSH 0.2.x
+        run: pnpm test

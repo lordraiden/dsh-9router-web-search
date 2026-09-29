@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const storefrontOwner = process.env.STOREFRONT_OWNER ?? 'awesome-dsh-plugin'
@@ -79,33 +79,38 @@ function hasOpenSyncPullRequest() {
 function updateStorefront() {
   assertStorefrontPushAccess()
   const worktree = resolve(root, '.storefront-sync')
-  run('git', ['clone', `https://github.com/${storefrontOwner}/${storefrontRepo}.git`, worktree])
-  const forkUrl = `https://github.com/${forkOwner}/${storefrontRepo}.git`
-  run('git', ['-C', worktree, 'remote', 'add', 'fork', forkUrl])
-  const entryFile = `data/plugins/${pluginOwner}__${pluginRepo}.yml`
-  const entryPath = resolve(worktree, entryFile)
-  const exists = hasExistingEntry()
-
-  run('git', ['-C', worktree, 'switch', '-c', branch])
-  writeFileSync(entryPath, buildEntry())
-  run('npm', ['ci'], { cwd: worktree })
-  run('node', ['scripts/generate-readme.mjs'], { cwd: worktree })
-  run('git', ['-C', worktree, 'config', 'user.name', 'github-actions[bot]'])
-  run('git', ['-C', worktree, 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
-  run('git', ['-C', worktree, 'add', entryFile, 'README.md', 'README.zh.md'])
-
   try {
-    run('git', ['-C', worktree, 'diff', '--cached', '--quiet'])
-    console.log('skip: storefront entry is already current')
-    return
-  } catch {}
+    run('git', ['clone', `https://github.com/${storefrontOwner}/${storefrontRepo}.git`, worktree])
+    const forkUrl = `https://github.com/${forkOwner}/${storefrontRepo}.git`
+    run('git', ['-C', worktree, 'remote', 'add', 'fork', forkUrl])
+    const entryFile = `data/plugins/${pluginOwner}__${pluginRepo}.yml`
+    const entryPath = resolve(worktree, entryFile)
+    const exists = hasExistingEntry()
 
-  const action = exists ? 'update' : 'add'
-  run('git', ['-C', worktree, 'commit', '-m', `${action}: ${pluginOwner}/${pluginRepo}`])
-  run('git', ['-C', worktree, 'push', '--set-upstream', 'fork', `HEAD:${branch}`])
+    run('git', ['-C', worktree, 'switch', '-c', branch])
+    writeFileSync(entryPath, buildEntry())
+    run('npm', ['ci'], { cwd: worktree })
+    run('node', ['scripts/generate-readme.mjs'], { cwd: worktree })
+    run('git', ['-C', worktree, 'config', 'user.name', 'github-actions[bot]'])
+    run('git', ['-C', worktree, 'config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
+    run('git', ['-C', worktree, 'add', entryFile, 'README.md', 'README.zh.md'])
 
-  if (!hasOpenSyncPullRequest()) {
-    run('gh', ['pr', 'create', '-R', `${storefrontOwner}/${storefrontRepo}`, '--base', 'main', '--head', `${forkOwner}:${branch}`, '--title', `${action === 'add' ? 'Add' : 'Update'} ${pluginPackage} plugin`, '--body', `Automated storefront ${action} for ${pluginPackage}@${packageJson.version}.`])
+    try {
+      run('git', ['-C', worktree, 'diff', '--cached', '--quiet'])
+      console.log('skip: storefront entry is already current')
+      return
+    } catch {}
+
+    const action = exists ? 'update' : 'add'
+    run('git', ['-C', worktree, 'commit', '-m', `${action}: ${pluginOwner}/${pluginRepo}`])
+    run('git', ['-C', worktree, 'push', '--set-upstream', 'fork', `HEAD:${branch}`])
+
+    if (!hasOpenSyncPullRequest()) {
+      run('gh', ['pr', 'create', '-R', `${storefrontOwner}/${storefrontRepo}`, '--base', 'main', '--head', `${forkOwner}:${branch}`, '--title', `${action === 'add' ? 'Add' : 'Update'} ${pluginPackage} plugin`, '--body', `Automated storefront ${action} for ${pluginPackage}@${packageJson.version}.`])
+    }
+  } finally {
+    // The temporary clone is always removed, on success and on failure.
+    rmSync(worktree, { recursive: true, force: true })
   }
 }
 
