@@ -24,7 +24,7 @@ DSH seam 需要的 `WebSource` / `WebFetchBody`。
 ## 安装
 
 ```bash
-npx @deepseek-ai/dsh plugin --profile web add github:rebron1900/dsh-web-search-9router
+npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9router
 ```
 
 重启 Harness，然后强制刷新浏览器。在 `cordis.patch.yml` 中将 `searchProvider` 和 `fetchProvider` 配置为 `9router`，并在 `~/.dsh/.credentials.yaml` 中配置 `NINE_ROUTER_API_KEY`，或在插件设置中设置 `apiKey`。
@@ -32,7 +32,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:rebron1900/dsh-web-search-9
 如需锁定可复现的安装版本，在仓库地址后追加 commit SHA：
 
 ```bash
-npx @deepseek-ai/dsh plugin --profile web add github:rebron1900/dsh-web-search-9router#44d1936
+npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9router#44d1936
 ```
 
 ## 测试
@@ -40,3 +40,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:rebron1900/dsh-web-search-9
 ```bash
 pnpm test
 ```
+
+## 🙏 致谢
+
+本项目 fork 自 [rebron1900/dsh-web-search-9router](https://github.com/rebron1900/dsh-web-search-9router) —— 感谢原作者为 DeepSeek Harness（DSH）提供 9router 背书的网页搜索与抓取 provider。

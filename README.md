@@ -118,3 +118,7 @@ dsh-web-search-9router/
 ## 📄 License
 
 [MIT](./LICENSE)
+
+## 🙏 Acknowledgments
+
+This project is a fork of [rebron1900/dsh-web-search-9router](https://github.com/rebron1900/dsh-web-search-9router) — thank you for the original 9router-backed web search and fetch provider for DeepSeek Harness.
