@@ -22,7 +22,7 @@ dsh-web-search-9router/
 ## 环境与依赖
 
 - 包管理器：pnpm
-- 环境变量：`NINE_ROUTER_API_KEY`（9router API 密钥，经 credentials 服务解析）、`NINE_ROUTER_BASE_URL`（可选，覆盖默认端点）
+- 环境变量：`NINE_ROUTER_API_KEY`（9router API 密钥，可选，经 credentials 服务解析）、`NINE_ROUTER_BASE_URL`（可选，覆盖默认端点）
 - 安装命令：`pnpm install`
 - 本地启动：由 DSH profile 加载，无需独立启动
 
@@ -30,8 +30,8 @@ dsh-web-search-9router/
 
 1. 在 DSH profile 的 `package.json` dependencies 中加入本包：`"dsh-web-search-9router": "link:/home/rebron1900/workspace/projects/active/dsh-web-search-9router"`。
 2. 在 profile 的 `dsh.profile.bundles` 中加入 `"dsh-web-search-9router"`。
-3. 在 profile 的 `cordis.patch.yml` 中将 `web` 的 `searchProvider` 和 `fetchProvider` 设为 `9router`；不需要禁用 `web-search-deepseek`。
-4. 在 `~/.dsh/.credentials.yaml` 中存 `NINE_ROUTER_API_KEY`；或在本插件 settings 段设置字面 `apiKey`。
+3. 插件的 `cordis.patch.yml` 已把 `web` 的 `searchProvider` 和 `fetchProvider` 固定为 `9router`，无需手动接入；也不需要禁用 `web-search-deepseek`。
+4. 如果你的 9router 实例需要密钥，在 `~/.dsh/.credentials.yaml` 中存 `NINE_ROUTER_API_KEY`；或在本插件 settings 段设置字面 `apiKey`。密钥可选，无密钥实例开箱即用。
 5. 重启 `dsh web` 后生效。禁用 `web-search-deepseek` 会按设计隐藏它的设置卡片。
 
 ## 代码规范
@@ -58,7 +58,7 @@ dsh-web-search-9router/
 
 - 测试框架：node:test
 - 执行命令：`pnpm test`
-- 覆盖范围：`mapSearchResponse` 的响应解析与容错。
+- 覆盖范围：`mapSearchResponse` / `mapFetchResponse` 的响应解析与容错、重试与可选认证行为、设置卡片。
 
 ## CodeGraph
 

@@ -1,6 +1,12 @@
 # dsh-web-search-9router — bundle patch.
-# Insert this plugin's cordis entry so its apply() runs and registers the
-# 9router search + fetch providers on ctx.web.
+# Pin both web seam capabilities to this plugin's providers, then insert the
+# plugin entry so its apply() runs and registers the 9router search + fetch
+# providers on ctx.web. The `web` row replace pins both capabilities; a
+# profile's own cordis.patch.yml can override the row (last write wins).
+- id: web
+  config:
+    searchProvider: 9router
+    fetchProvider: 9router
 - insert:
     - id: web-search-9router
       name: dsh-web-search-9router

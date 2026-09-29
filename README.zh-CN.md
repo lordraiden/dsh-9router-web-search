@@ -3,7 +3,7 @@
 > **为 DeepSeek Harness 提供由 9router 背书的网页搜索与抓取。**
 > 将原生 `web_search` 与 `web_fetch` 工具接入 9router 的 `/v1/search` 与 `/v1/web/fetch` 端点 —— 无需服务端搜索工具。
 
-[![Version](https://img.shields.io/badge/version-0.1.1-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
+[![Version](https://img.shields.io/badge/version-0.2.0-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![ESM](https://img.shields.io/badge/module-ESM-8e44ad)](https://nodejs.org/api/esm.html)
@@ -17,8 +17,9 @@
 
 - 🔎 **搜索 provider** — 将 DSH 原生 `web_search` 路由到 9router 的 `/v1/search`，返回去重后的 `WebSource` 结果（标题、摘要、发布日期）。
 - 📄 **抓取 provider** — 将 DSH 原生 `web_fetch` 路由到 9router 的 `/v1/web/fetch`，返回干净的文本/Markdown 正文。
-- 🎛️ **设置卡片** — 原生 DSH 设置面板，用于配置 API 密钥、基础地址、模型与限额。
-- 🔐 **凭据感知** — 从 DSH 凭据服务（`NINE_ROUTER_API_KEY`）或字面配置值解析 API 密钥；绝不提交到仓库。
+- 🎛️ **设置卡片** — 原生 DSH 设置面板，用于配置 API 密钥、基础地址、模型、超时与限额。
+- 🧩 **零配置接入** — bundle patch 已把 web seam 的 search 与 fetch 固定到 `9router`，无需手动配置 provider。
+- 🔐 **凭据感知、密钥可选** — 从 DSH 凭据服务（`NINE_ROUTER_API_KEY`）或字面配置值解析 API 密钥；无密钥的本地 9router 实例开箱即用；绝不提交到仓库。
 - 🧱 **零构建** — 纯 ESM，纯 JavaScript，无需打包器。
 
 ## 🧭 为什么需要它
@@ -53,7 +54,7 @@ DSH 默认的 `web_search` 使用 `web-search-deepseek` provider，它要求上�
       9router gateway (9router)
 ```
 
-错误会以机器可路由的 `WebError` 代码（`WEB_PROVIDER_ERROR`、`WEB_PROVIDER_CREDENTIAL_MISSING`、`WEB_ABORTED`）呈现，非 2xx 的抓取响应会作为结果返回 —— 绝不静默抛出。
+错误会以机器可路由的 `WebError` 代码（`WEB_PROVIDER_ERROR`、`WEB_ABORTED`）呈现，瞬态网络与 5xx 故障按退避重试，非 2xx 的抓取响应会作为结果返回 —— 绝不静默抛出。
 
 ## 🚀 快速开始
 
@@ -65,8 +66,9 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9
 
 **2. 接入配置**
 
-- 在 profile 的 `cordis.patch.yml` 中，将 `searchProvider` 与 `fetchProvider` 设为 `9router`。
-- 在 `~/.dsh/.credentials.yaml` 中保存 `NINE_ROUTER_API_KEY`，或在插件设置中设置字面 `apiKey`。
+- 插件的 bundle patch 已把 `web.searchProvider` 与 `web.fetchProvider` 固定为 `9router` —— 无需手动接入（profile 自己的 `cordis.patch.yml` 可覆盖该行）。
+- 默认 `baseURL` 指向自托管 9router 的 `http://localhost:20128/v1`；可在设置卡片中指向你自己的网关（例如云 9router）。
+- 如果你的 9router 实例需要密钥，在 `~/.dsh/.credentials.yaml` 中保存 `NINE_ROUTER_API_KEY`，或在插件设置中设置字面 `apiKey`。无密钥的实例开箱即用。
 
 **3. 重启并刷新**
 
@@ -82,14 +84,20 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9
 
 | 键 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `baseURL` | string | 9router 默认端点 | 你的 9router 兼容 API 的基础地址（同时支持 `NINE_ROUTER_BASE_URL` 环境变量） |
+| `baseURL` | string | `http://localhost:20128/v1` | 你的 9router 兼容 API 的基础地址（同时支持 `NINE_ROUTER_BASE_URL` 环境变量） |
 | `searchModel` | string | `search-combo` | 搜索端点使用的模型名 |
 | `fetchModel` | string | `fetch-combo` | 抓取端点使用的模型名 |
 | `searchType` | string | `web` | 发送到搜索端点的 `search_type` |
 | `maxResults` | number | `8` | 每次搜索的最大来源数 |
-| `timeoutMs` | number | `30000` | 每请求超时时间 |
-| `apiKey` | secret | — | 字面 API 密钥（可选） |
+| `timeoutMs` | number | `30000` | 共享的每请求超时（各能力默认值） |
+| `searchTimeoutMs` | number | `30000` | 仅搜索的超时；留空沿用 `timeoutMs` |
+| `fetchTimeoutMs` | number | `30000` | 仅抓取的超时；留空沿用 `timeoutMs` |
+| `fetchFormat` | string | `markdown` | 请求抓取端点返回的正文格式（`markdown`、`text`、`html`） |
+| `maxCharacters` | number | `0` | 抓取正文的字符上限；`0` 表示不限制 |
+| `apiKey` | secret | — | 字面 API 密钥（可选；无密钥 = 不发送 `Authorization` 头） |
 | `apiKeyEnv` | credential-ref | `NINE_ROUTER_API_KEY` | 凭据服务的键名 |
+
+自托管 9router 按自己的 provider 配置选择搜索/抓取后端，会忽略 `searchModel`/`fetchModel`；按模型路由的云网关请保留这两个字段。
 
 ## 🧪 开发
 

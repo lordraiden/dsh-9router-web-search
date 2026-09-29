@@ -7,8 +7,8 @@ import { WebError } from "@deepseek-ai/dsh-web";
 /** Stable id this provider registers under for both search and fetch. */
 const PROVIDER_ID = "9router";
 
-/** Default endpoint: 9router native API, `/v1` included (`/search` and `/web/fetch` are appended). */
-const DEFAULT_BASE_URL = "https://napi.190102.xyz:4433/v1";
+/** Default endpoint: self-hosted 9router on its default port, `/v1` included (`/search` and `/web/fetch` are appended). */
+const DEFAULT_BASE_URL = "http://localhost:20128/v1";
 
 /** Default model name for the search endpoint. */
 const DEFAULT_SEARCH_MODEL = "search-combo";
@@ -24,6 +24,12 @@ const DEFAULT_MAX_RESULTS = 8;
 
 /** Default per-request timeout (ms). */
 const DEFAULT_TIMEOUT_MS = 30000;
+
+/** Default body format requested from the fetch endpoint. */
+const DEFAULT_FETCH_FORMAT = "markdown";
+
+/** Default fetch body cap in characters; `0` sends no cap. */
+const DEFAULT_MAX_CHARACTERS = 0;
 
 /**
  * Map the 9router `/v1/search` response to a normalized search result.
@@ -55,10 +61,34 @@ function mapSearchResponse(body) {
 			...typeof item.published_at === "string" && item.published_at.length > 0 ? { publishedAt: item.published_at } : {}
 		});
 	}
+	const total = body?.metrics?.total_results_available;
 	return {
 		sources,
-		truncated: false,
+		truncated: typeof total === "number" && total > raw.length,
 		...typeof body.answer === "string" && body.answer.length > 0 ? { content: body.answer } : {}
+	};
+}
+
+/**
+ * Map the 9router `/v1/web/fetch` response to a normalized fetch result.
+ * The gateway caps the body server-side via `maxCharacters` and reports the
+ * final length in `content.length`; a body that reached the cap is flagged
+ * `truncated`.
+ * @param data - the parsed JSON response body.
+ * @param result - the result envelope: request url, HTTP status, and the cap sent.
+ * @returns the normalized fetch result.
+ */
+function mapFetchResponse(data, { url, statusCode, maxCharacters }) {
+	const content = data?.content;
+	const text = typeof content?.text === "string" ? content.text : "";
+	return {
+		url,
+		statusCode,
+		body: {
+			kind: content?.format === "html" ? "html" : "text",
+			content: text
+		},
+		truncated: Number.isFinite(maxCharacters) && maxCharacters > 0 && text.length >= maxCharacters
 	};
 }
 
@@ -71,8 +101,7 @@ var NineRouterSearchProvider = class {
 		this.resolveOptions = resolveOptions;
 	}
 	available() {
-		const options = this.resolveOptions();
-		return ((options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== void 0) && URL.canParse(options.baseURL);
+		return URL.canParse(this.resolveOptions().baseURL);
 	}
 	async search(request, signal) {
 		const options = this.resolveOptions();
@@ -95,31 +124,13 @@ var NineRouterSearchProvider = class {
 		}
 	}
 	async post(endpoint, options, apiKey, body, signal) {
-		let response;
-		try {
-			response = await fetch(endpoint, {
-				method: "POST",
-				redirect: "error",
-				headers: {
-					"content-type": "application/json",
-					"accept": "application/json",
-					"authorization": `Bearer ${apiKey}`
-				},
-				body: JSON.stringify(body),
-				signal: requestSignal(signal, options.timeoutMs)
-			});
-		} catch (error) {
-			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
-			throw new WebError(`9router search request failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
-		}
+		const response = await requestWithRetries(endpoint, requestInit(apiKey, body), {
+			signal,
+			timeoutMs: options.searchTimeoutMs,
+			kind: "search"
+		});
 		if (!response.ok) {
-			let message = `9router search API error (HTTP ${response.status})`;
-			try {
-				const parsed = await response.json();
-				const detail = typeof parsed?.error === "string" ? parsed.error : parsed?.error?.message ?? parsed?.message;
-				if (typeof detail === "string" && detail.length > 0) message = detail;
-			} catch { /* response body is not JSON; keep the HTTP message */ }
-			throw new WebError(message, "WEB_PROVIDER_ERROR");
+			throw new WebError(await providerErrorMessage("search", response, apiKey, options.apiKeyEnv), "WEB_PROVIDER_ERROR");
 		}
 		return response;
 	}
@@ -133,8 +144,7 @@ var NineRouterSearchProvider = class {
 			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
 			throw new WebError(`9router search credential resolution failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
 		}
-		if (resolved !== void 0 && resolved.length > 0) return resolved;
-		throw new WebError(`9router search has no API key for "${options.apiKeyEnv ?? "NINE_ROUTER_API_KEY"}"; store it through the credentials service or set a literal "apiKey" in the web-search-9router config`, "WEB_PROVIDER_CREDENTIAL_MISSING");
+		return resolved;
 	}
 };
 
@@ -150,8 +160,7 @@ var NineRouterFetchProvider = class {
 		this.resolveOptions = resolveOptions;
 	}
 	available() {
-		const options = this.resolveOptions();
-		return ((options.apiKey?.length ?? 0) > 0 || options.resolveApiKey !== void 0) && URL.canParse(options.baseURL);
+		return URL.canParse(this.resolveOptions().baseURL);
 	}
 	async fetch(request, signal) {
 		const options = this.resolveOptions();
@@ -161,49 +170,24 @@ var NineRouterFetchProvider = class {
 		const body = {
 			model: options.fetchModel,
 			url: request.url,
-			format: "markdown"
+			format: options.fetchFormat,
+			...(options.maxCharacters > 0 ? { maxCharacters: options.maxCharacters } : {})
 		};
-		let response;
-		try {
-			response = await fetch(endpoint, {
-				method: "POST",
-				redirect: "error",
-				headers: {
-					"content-type": "application/json",
-					"accept": "application/json",
-					"authorization": `Bearer ${apiKey}`
-				},
-				body: JSON.stringify(body),
-				signal: requestSignal(signal, options.timeoutMs)
-			});
-		} catch (error) {
-			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
-			throw new WebError(`9router fetch request failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
-		}
+		const response = await requestWithRetries(endpoint, requestInit(apiKey, body), {
+			signal,
+			timeoutMs: options.fetchTimeoutMs,
+			kind: "fetch"
+		});
 		if (!response.ok) {
-			let message = `9router fetch API error (HTTP ${response.status})`;
-			try {
-				const parsed = await response.json();
-				const detail = typeof parsed?.error === "string" ? parsed.error : parsed?.error?.message ?? parsed?.message;
-				if (typeof detail === "string" && detail.length > 0) message = detail;
-			} catch { /* keep the HTTP message */ }
 			return {
 				url: request.url,
 				statusCode: response.status,
-				body: { kind: "text", content: message },
+				body: { kind: "text", content: await providerErrorMessage("fetch", response, apiKey, options.apiKeyEnv) },
 				truncated: true
 			};
 		}
 		try {
-			const data = await response.json();
-			const content = data?.content;
-			const format = content?.format === "html" ? "html" : "text";
-			return {
-				url: request.url,
-				statusCode: response.status,
-				body: { kind: format, content: typeof content?.text === "string" ? content.text : "" },
-				truncated: false
-			};
+			return mapFetchResponse(await response.json(), { url: request.url, statusCode: response.status, maxCharacters: options.maxCharacters });
 		} catch (error) {
 			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
 			throw new WebError(`9router fetch returned an unprocessable response body: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
@@ -219,8 +203,7 @@ var NineRouterFetchProvider = class {
 			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
 			throw new WebError(`9router fetch credential resolution failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
 		}
-		if (resolved !== void 0 && resolved.length > 0) return resolved;
-		throw new WebError(`9router fetch has no API key for "${options.apiKeyEnv ?? "NINE_ROUTER_API_KEY"}"; store it through the credentials service or set a literal "apiKey" in the web-search-9router config`, "WEB_PROVIDER_CREDENTIAL_MISSING");
+		return resolved;
 	}
 };
 
@@ -254,6 +237,63 @@ function abortable(operation, signal) {
 		});
 	});
 }
+function requestInit(apiKey, body) {
+	return {
+		method: "POST",
+		redirect: "error",
+		headers: {
+			"content-type": "application/json",
+			"accept": "application/json",
+			...(apiKey !== void 0 ? { authorization: `Bearer ${apiKey}` } : {})
+		},
+		body: JSON.stringify(body)
+	};
+}
+function isRetryableStatus(status) {
+	return status === 500 || status === 502 || status === 503 || status === 504;
+}
+async function requestWithRetries(endpoint, init, { signal, timeoutMs, kind }) {
+	const delays = [500, 1500];
+	let attempt = 0;
+	for (;;) {
+		throwIfAborted(signal);
+		try {
+			const response = await fetch(endpoint, { ...init, signal: requestSignal(signal, timeoutMs) });
+			if (response.ok || !isRetryableStatus(response.status) || attempt >= delays.length) return response;
+			response.body?.cancel();
+		} catch (error) {
+			if (signal?.aborted === true || isAbortError(error)) throw aborted(signal, error);
+			if (attempt >= delays.length) throw new WebError(`9router ${kind} request failed: ${String(error)}`, "WEB_PROVIDER_ERROR", { cause: error });
+		}
+		await abortableDelay(delays[attempt], signal);
+		attempt += 1;
+	}
+}
+function abortableDelay(ms, signal) {
+	if (signal === void 0) return new Promise((resolve) => setTimeout(resolve, ms));
+	if (signal.aborted) return Promise.reject(aborted(signal));
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			signal.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		const onAbort = () => {
+			clearTimeout(timer);
+			reject(aborted(signal));
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+	});
+}
+async function providerErrorMessage(kind, response, apiKey, apiKeyEnv) {
+	let message = `9router ${kind} API error (HTTP ${response.status})`;
+	try {
+		const parsed = await response.json();
+		const detail = typeof parsed?.error === "string" ? parsed.error : parsed?.error?.message ?? parsed?.message;
+		if (typeof detail === "string" && detail.length > 0) message = detail;
+	} catch { /* response body is not JSON; keep the HTTP message */ }
+	if (response.status === 401 && apiKey === void 0) message = `${message} — no API key is configured; store "${apiKeyEnv ?? "NINE_ROUTER_API_KEY"}" or set a literal "apiKey"`;
+	return message;
+}
 //#endregion
 
 //#region index
@@ -270,7 +310,11 @@ const Config = z.object({
 	fetchModel: z.string().default(DEFAULT_FETCH_MODEL),
 	searchType: z.string().default(DEFAULT_SEARCH_TYPE),
 	maxResults: z.number().step(1).min(1).default(DEFAULT_MAX_RESULTS),
-	timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS)
+	timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
+	searchTimeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
+	fetchTimeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
+	fetchFormat: z.string().default(DEFAULT_FETCH_FORMAT),
+	maxCharacters: z.number().step(1).min(0).default(DEFAULT_MAX_CHARACTERS)
 });
 const SEARCH_BASE_URL_ENV = "NINE_ROUTER_BASE_URL";
 const SETTINGS_NAMESPACE = "web-search-9router";
@@ -292,7 +336,11 @@ function resolveOptions(ctx, config) {
 		fetchModel: config.fetchModel ?? DEFAULT_FETCH_MODEL,
 		searchType: config.searchType ?? DEFAULT_SEARCH_TYPE,
 		maxResults: config.maxResults ?? DEFAULT_MAX_RESULTS,
-		timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS
+		timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		searchTimeoutMs: config.searchTimeoutMs ?? config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		fetchTimeoutMs: config.fetchTimeoutMs ?? config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		fetchFormat: config.fetchFormat ?? DEFAULT_FETCH_FORMAT,
+		maxCharacters: config.maxCharacters ?? DEFAULT_MAX_CHARACTERS
 	};
 }
 
@@ -314,7 +362,9 @@ export {
 	Config,
 	DEFAULT_API_KEY_ENV,
 	DEFAULT_BASE_URL,
+	DEFAULT_FETCH_FORMAT,
 	DEFAULT_FETCH_MODEL,
+	DEFAULT_MAX_CHARACTERS,
 	DEFAULT_SEARCH_MODEL,
 	DEFAULT_SEARCH_TYPE,
 	PROVIDER_ID,
@@ -322,6 +372,7 @@ export {
 	NineRouterSearchProvider,
 	apply,
 	inject,
+	mapFetchResponse,
 	mapSearchResponse,
 	name
 };

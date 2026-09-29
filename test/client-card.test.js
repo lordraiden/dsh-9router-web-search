@@ -200,7 +200,7 @@ test("the card renders the disclosure header, footer buttons, and field controls
 	assert.ok(findByClass(tree, "dsh9-body"));
 	assert.equal(findByClass(tree, "dsh9-discard").props.disabled, true);
 	assert.equal(findByClass(tree, "dsh9-save").props.disabled, true);
-	assert.equal(findAll(tree, (node) => classesOf(node).includes("dsh9-input")).length, 7);
+	assert.equal(findAll(tree, (node) => classesOf(node).includes("dsh9-input")).length, 12);
 	assert.equal(findByClass(tree, "dsh9-read-only"), undefined);
 });
 
@@ -224,7 +224,7 @@ test("a read-only deployment disables the controls and states why", () => {
 	const tree = card.render();
 	assert.equal(findByClass(tree, "dsh9-read-only").props.children[0], "readOnly");
 	const disabled = findAll(tree, (node) => classesOf(node).includes("dsh9-input") && node.props.disabled === true);
-	assert.equal(disabled.length, 6);
+	assert.equal(disabled.length, 11);
 });
 
 test("a draft that is not a number blocks the save", async () => {

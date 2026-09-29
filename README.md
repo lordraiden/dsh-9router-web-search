@@ -3,7 +3,7 @@
 > **Web search & fetch for DeepSeek Harness, powered by 9router.**
 > Wires the native `web_search` and `web_fetch` tools into 9router's `/v1/search` and `/v1/web/fetch` endpoints — no server-side search tool required.
 
-[![Version](https://img.shields.io/badge/version-0.1.1-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
+[![Version](https://img.shields.io/badge/version-0.2.0-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![ESM](https://img.shields.io/badge/module-ESM-8e44ad)](https://nodejs.org/api/esm.html)
@@ -17,8 +17,9 @@
 
 - 🔎 **Search provider** — routes DSH's native `web_search` through 9router's `/v1/search`, returning deduplicated `WebSource` results (title, snippet, published date).
 - 📄 **Fetch provider** — routes DSH's native `web_fetch` through 9router's `/v1/web/fetch`, returning clean text/markdown bodies.
-- 🎛️ **Settings card** — a native DSH settings panel for the API key, base URL, models, and limits.
-- 🔐 **Credentials-aware** — resolves the API key from DSH's credentials service (`NINE_ROUTER_API_KEY`) or a literal config value; never committed to the repo.
+- 🎛️ **Settings card** — a native DSH settings panel for the API key, base URL, models, timeouts, and limits.
+- 🧩 **Zero-config wiring** — the bundle patch pins the web seam's search and fetch to `9router`; no manual provider configuration.
+- 🔐 **Credentials-aware, key-optional** — resolves the API key from DSH's credentials service (`NINE_ROUTER_API_KEY`) or a literal config value; keyless local 9router instances work out of the box; never committed to the repo.
 - 🧱 **Zero build** — pure ESM, plain JavaScript, no bundler required.
 
 ## 🧭 Why this plugin
@@ -53,7 +54,7 @@ This plugin calls 9router's own endpoints directly and maps their responses to t
       9router gateway (9router)
 ```
 
-Errors surface as machine-routable `WebError` codes (`WEB_PROVIDER_ERROR`, `WEB_PROVIDER_CREDENTIAL_MISSING`, `WEB_ABORTED`), and non-2xx fetch responses come back as results — never silent throws.
+Errors surface as machine-routable `WebError` codes (`WEB_PROVIDER_ERROR`, `WEB_ABORTED`); transient network and 5xx failures are retried with backoff; non-2xx fetch responses come back as results — never silent throws.
 
 ## 🚀 Quick start
 
@@ -65,8 +66,9 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9
 
 **2. Wire it up**
 
-- In your profile's `cordis.patch.yml`, set `searchProvider` and `fetchProvider` to `9router`.
-- Store your key in `~/.dsh/.credentials.yaml` as `NINE_ROUTER_API_KEY`, or set a literal `apiKey` in the plugin settings.
+- The plugin's bundle patch already pins `web.searchProvider` and `web.fetchProvider` to `9router` — no manual wiring needed (a profile's own `cordis.patch.yml` can override the row).
+- The default `baseURL` targets a self-hosted 9router on `http://localhost:20128/v1`; point it at your own gateway (for example a cloud 9router) in the settings card.
+- If your 9router instance requires a key, store it in `~/.dsh/.credentials.yaml` as `NINE_ROUTER_API_KEY`, or set a literal `apiKey` in the plugin settings. Keyless instances work without any credential.
 
 **3. Restart & refresh**
 
@@ -82,14 +84,20 @@ Restart Harness, then hard-refresh the browser. The `9router` options appear in 
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `baseURL` | string | 9router default endpoint | Base URL of your 9router-compatible API (`NINE_ROUTER_BASE_URL` env also honored) |
+| `baseURL` | string | `http://localhost:20128/v1` | Base URL of your 9router-compatible API (`NINE_ROUTER_BASE_URL` env also honored) |
 | `searchModel` | string | `search-combo` | Model name for the search endpoint |
 | `fetchModel` | string | `fetch-combo` | Model name for the fetch endpoint |
 | `searchType` | string | `web` | `search_type` sent to the search endpoint |
 | `maxResults` | number | `8` | Max sources per search |
-| `timeoutMs` | number | `30000` | Per-request timeout |
-| `apiKey` | secret | — | Literal API key (optional) |
+| `timeoutMs` | number | `30000` | Shared per-request timeout (per-capability defaults) |
+| `searchTimeoutMs` | number | `30000` | Search-only timeout; blank follows `timeoutMs` |
+| `fetchTimeoutMs` | number | `30000` | Fetch-only timeout; blank follows `timeoutMs` |
+| `fetchFormat` | string | `markdown` | Body format requested from the fetch endpoint (`markdown`, `text`, `html`) |
+| `maxCharacters` | number | `0` | Character cap for fetched bodies; `0` sends no cap |
+| `apiKey` | secret | — | Literal API key (optional; no key = no `Authorization` header) |
 | `apiKeyEnv` | credential-ref | `NINE_ROUTER_API_KEY` | Credentials-service key name |
+
+Self-hosted 9router picks its search and fetch backends from its own provider configuration and ignores `searchModel`/`fetchModel`; keep those fields set for cloud gateways that route by model.
 
 ## 🧪 Development
 
