@@ -1,82 +1,168 @@
-# dsh-web-search-9router
+# AGENTS.md
 
-## 项目概述
+## Project
 
-- **描述**：为 DeepSeek Harness（DSH）提供 9router 背书的网页搜索与抓取 provider，接入 `ctx.web`。把原生 `web_search` / `web_fetch` 工具接到 9router 的 `/v1/search` 与 `/v1/web/fetch` 端点。
-- **技术栈**：Node.js（ESM）、cordis 插件、`@deepseek-ai/dsh-web` web seam、schemastery 配置。
-- **运行时**：Node 20+（与 DSH 要求一致）。
-- **仓库地址**：internal（本地 profile 以 `link:` 依赖引入）。
+**Repository:** `lordraiden/dsh-web-search-9router`
 
-## 目录结构
+**Purpose:** DSH plugin that registers 9router-backed web search and web fetch providers with the `ctx.web` seam. The plugin maps DSH's native web operations to 9router's `/v1/search` and `/v1/web/fetch` endpoints.
 
-```text
-dsh-web-search-9router/
-├── src/index.js       # 插件入口：search + fetch provider
-├── test/              # 测试（node --test）
-├── package.json       # ESM 插件清单
-├── AGENTS.md
-├── .gitignore
-└── README.md
-```
+### Key entry points
 
-## 环境与依赖
+- `src/index.js` — server-side Cordis plugin, configuration, credential resolution, and web providers.
+- `client.js` — DSH web client entry point for the plugin settings UI.
+- `cordis.patch.yml` — bundle patch that loads the plugin and supplies its bundle-level configuration.
+- `scripts/sync-storefront.mjs` — automation for syncing the plugin into the DSH storefront repository.
+- `test/` — Node.js test suite when present.
 
-- 包管理器：pnpm
-- 环境变量：`NINE_ROUTER_API_KEY`（9router API 密钥，经 credentials 服务解析）、`NINE_ROUTER_BASE_URL`（可选，覆盖默认端点）
-- 安装命令：`pnpm install`
-- 本地启动：由 DSH profile 加载，无需独立启动
+The GitHub repository is the canonical source and distribution point. Do not use machine-specific filesystem paths as installation or dependency examples.
 
-## 接入方式
+## Runtime and package management
 
-1. 在 DSH profile 的 `package.json` dependencies 中加入本包：`"dsh-web-search-9router": "link:/home/rebron1900/workspace/projects/active/dsh-web-search-9router"`。
-2. 在 profile 的 `dsh.profile.bundles` 中加入 `"dsh-web-search-9router"`。
-3. 在 profile 的 `cordis.patch.yml` 中将 `web` 的 `searchProvider` 和 `fetchProvider` 设为 `9router`；不需要禁用 `web-search-deepseek`。
-4. 在 `~/.dsh/.credentials.yaml` 中存 `NINE_ROUTER_API_KEY`；或在本插件 settings 段设置字面 `apiKey`。
-5. 重启 `dsh web` 后生效。禁用 `web-search-deepseek` 会按设计隐藏它的设置卡片。
+- Node.js: `>=20`, as declared by `package.json`.
+- Package manager: pnpm.
+- Module system: native ESM (`"type": "module"`).
+- The plugin is intentionally JavaScript-first and currently has no build step.
+- Keep the lockfile committed and update it together with dependency changes.
+- Use `pnpm install --frozen-lockfile` for reproducible CI/release installs.
 
-## 代码规范
-
-- 纯 ESM，`type: module`，无构建步骤。
-- 插件导出 `name` / `inject` / `Config` / `apply`。
-- provider 通过 `ctx.web.registerSearchProvider` / `ctx.web.registerFetchProvider` 注册。
-- 错误统一用 `@deepseek-ai/dsh-web` 的 `WebError`，机器可路由 code。
-- 不提交密钥、token 或本地环境文件。
-
-## 命名约定
-
-- 插件 id：`9router`；cordis 插件名：`web-search-9router`。
-- 配置键、变量、函数：小驼峰。
-
-## Git 规范
-
-- 默认分支：`main`
-- 分支命名：`feature/<name>`、`fix/<name>`
-- Commit：Conventional Commits（feat/fix/chore/docs/test）
-- 提交前执行：`pnpm test`
-
-## 测试
-
-- 测试框架：node:test
-- 执行命令：`pnpm test`
-- 覆盖范围：`mapSearchResponse` 的响应解析与容错。
-
-## CodeGraph
-
-- 状态：未使用
-
-## 常用命令
+Useful commands:
 
 ```bash
 pnpm install
 pnpm test
 ```
 
-## 发布与目录收录
+Run the relevant tests after every behavioral change. Do not claim compatibility with a DSH version that has not been verified.
 
-- GitHub 仓库是唯一分发源，不发布 npm 包；每次版本提交并推送到 `main` 后，由 Agent 检查 GitHub 仓库和版本，再向 `rebron1900/awesome-dsh-plugin` fork 推送同步分支，并向 `awesome-dsh-plugin/awesome-dsh-plugin` 创建或更新目录 PR。
-- 稳定版本可通过匹配的 `v<version>` tag 创建 GitHub Release；目录收录不以 npm 发布为前置条件。
-- 目录 PR 只修改 `data/plugins/rebron1900__dsh-web-search-9router.yml` 及上游要求的生成文件；README 不手工编辑。
-- 创建目录 PR 前检查仓库提交、`dsh-plugin` topic、`dsh.bundle` 和 GitHub 版本；使用本机已登录的 GitHub CLI 凭据，不把 GitHub token 写入仓库。
+## DSH integration
 
-## 其他规则
-- 禁止反向测试和反向注释,不做的事情不用说出来
+### Server-side provider
+
+The plugin follows the DSH Cordis plugin shape:
+
+- exports `name`, `inject`, `Config`, and `apply`;
+- registers both providers through `ctx.web.registerSearchProvider()` and `ctx.web.registerFetchProvider()`;
+- uses provider id `9router`;
+- resolves credentials through the DSH credentials service and the DSH launch-environment seam;
+- `available()` must remain local and must not perform network requests.
+
+Preserve the contracts of `@deepseek-ai/dsh-web` rather than inventing a parallel abstraction. In particular:
+
+- search provider failures should surface as `WebError` failures;
+- fetch non-2xx responses are results, not provider exceptions;
+- `truncated` must mean that content or sources were actually truncated;
+- aborts and timeouts must remain distinguishable from ordinary provider failures where the DSH API permits it.
+
+Prefer the current DSH APIs and patterns documented by the installed DSH version. Do not introduce new dependencies on legacy APIs such as `settingsScope` when implementing or refactoring the settings UI.
+
+### Client-side settings
+
+Use DSH's native settings architecture and primitives whenever they provide the required behavior. Prefer `ctx.configForms`, `SettingsFormModel`, `SettingsForm`, `SettingsValueField`, and the corresponding field specifications over maintaining a private settings framework.
+
+Secrets are write-only configuration values. API keys must remain in the DSH credentials flow and must never be exposed in ordinary settings snapshots, logs, diagnostics, or documentation.
+
+Avoid duplicating DSH behavior for staging, dirty state, persistence, inheritance, validation, reset, or conflict handling unless the platform does not provide the required capability.
+
+## Configuration
+
+Configuration behavior must be explicit and testable.
+
+Current configuration concepts include:
+
+- `apiKey`
+- `apiKeyEnv`
+- `baseURL`
+- `searchModel`
+- `fetchModel`
+- `searchType`
+- `maxResults`
+- `timeoutMs`
+
+When adding or changing configuration:
+
+1. Define the schema and runtime behavior together.
+2. Keep precedence rules unambiguous between explicit configuration and environment values.
+3. Validate URLs, numeric limits, and user-provided strings at the configuration boundary where practical.
+4. Do not silently route user queries or credentials to an unconfigured third-party endpoint.
+5. Keep per-operation DSH limits distinct from plugin-level defaults.
+
+## HTTP and provider boundaries
+
+Keep the plugin thin. 9router owns provider/model combinations, upstream routing, and its server-side web-fetch security boundary.
+
+Within this repository:
+
+- use the standard `fetch` API and DSH's `ctx.web` contracts;
+- centralize genuinely shared HTTP behavior instead of maintaining divergent search/fetch implementations;
+- use `redirect: "error"` unless the provider contract explicitly requires redirects;
+- never log API keys or include them in thrown error messages;
+- do not add local SSRF policy, provider fallback chains, retries, or caching unless a concrete DSH/9router contract requires them.
+
+Do not broaden a peer dependency range merely to make package installation succeed. A supported DSH range must correspond to APIs the plugin actually works with.
+
+## Security
+
+Treat all credentials, authorization headers, and user-provided URLs as sensitive.
+
+- Never commit secrets, tokens, credentials files, local environment files, or private infrastructure details.
+- Error messages and diagnostics must not echo API keys.
+- Do not add example commands containing real credentials.
+- Keep the 9router endpoint configurable rather than embedding an opaque private service dependency.
+- For 9router security issues, prefer upgrading/configuring 9router over duplicating its server-side security controls in the plugin.
+
+## Code style and changes
+
+- Keep the implementation small and direct.
+- Prefer existing DSH/Cordis primitives over custom framework-like abstractions.
+- Preserve public behavior unless a change is explicitly required by an issue or compatibility fix.
+- Keep comments focused on intent, invariants, compatibility constraints, or non-obvious edge cases; do not narrate straightforward code.
+- Use clear camelCase names for JavaScript variables, functions, and configuration keys.
+- Keep provider ids, namespaces, and bundle identifiers stable unless a migration explicitly requires changing them.
+- Avoid unrelated formatting churn and speculative refactors.
+
+When changing behavior, update the implementation, tests, and user-facing documentation that describe that behavior as part of the same change when practical.
+
+## Testing
+
+The test suite uses Node's built-in `node:test` runner.
+
+Prioritize contract tests over implementation-detail tests. Provider tests should cover, as applicable:
+
+- request method, endpoint, headers, and JSON payload;
+- credentials resolution and missing credentials;
+- successful and malformed responses;
+- non-2xx behavior;
+- abort and timeout behavior;
+- response normalization and deduplication;
+- truncation semantics and configured limits;
+- configuration precedence and validation.
+
+HTTP tests must not require a live 9router service. Stub or inject the network boundary.
+
+Compatibility testing is part of the support contract: declare only DSH versions that have been exercised against the APIs used by the plugin, including the client settings integration.
+
+## Git workflow
+
+- Default branch: `main`.
+- Use Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
+- Before committing, run the relevant tests; for release-related changes, run the full test suite and packaging checks.
+- Keep commits focused and self-contained.
+- Do not rewrite shared history unless explicitly requested by the repository owner.
+- Direct commits to `main` are acceptable when explicitly requested by the repository owner; otherwise use the normal branch/PR workflow.
+
+## Storefront and release
+
+- The plugin is distributed from this GitHub repository; stable versions are represented by matching `v<version>` GitHub release tags.
+- Storefront synchronization is automated through `scripts/sync-storefront.mjs`.
+- Do not hand-edit generated storefront README files.
+- Keep storefront automation derived from the canonical repository identity (`lordraiden/dsh-web-search-9router`) while preserving its documented environment-variable overrides.
+- Storefront work must not place GitHub tokens, credentials, or private paths in committed files.
+- Release automation must test the same source that it packages and must keep the release tag aligned with `package.json`.
+
+## Documentation
+
+Documentation must describe the behavior that actually exists in the repository.
+
+When changing configuration, compatibility, installation, provider behavior, or security assumptions, update the relevant README and other project documentation accordingly. Keep English and Chinese README content functionally aligned when both describe the same public behavior.
+
+Do not document local workstation paths, unpublished assumptions, or compatibility claims that are not backed by code and tests.
