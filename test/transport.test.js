@@ -136,7 +136,7 @@ test("a cancelled fetch surfaces WEB_ABORTED, not a generic transport error", as
 test("a timed-out search surfaces WEB_TIMEOUT, not a generic transport error", async () => {
 	const stub = installFetchStub(hangingFetch());
 	try {
-		const provider = new NineRouterSearchProvider(() => ({ ...BASE_OPTIONS, searchTimeoutMs: 1 }));
+		const provider = new NineRouterSearchProvider(() => ({ ...BASE_OPTIONS, searchTimeoutMs: 50 }));
 		await assert.rejects(provider.search({ query: "q" }), (error) => {
 			assert.equal(error.name, "WebError");
 			assert.equal(error.code, "WEB_TIMEOUT");
@@ -151,7 +151,7 @@ test("a timed-out search surfaces WEB_TIMEOUT, not a generic transport error", a
 test("a timed-out fetch surfaces WEB_TIMEOUT, not a generic transport error", async () => {
 	const stub = installFetchStub(hangingFetch());
 	try {
-		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS, fetchTimeoutMs: 1 }));
+		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS, fetchTimeoutMs: 50 }));
 		await assert.rejects(provider.fetch({ url: "https://example.com" }), (error) => {
 			assert.equal(error.name, "WebError");
 			assert.equal(error.code, "WEB_TIMEOUT");
