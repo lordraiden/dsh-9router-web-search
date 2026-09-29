@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-9router",
-  "version": "0.1.1",
+  "version": "0.2.2",
   "description": "9router-backed web search + fetch providers for DeepSeek Harness (ctx.web). Wires the native web_search/web_fetch tools to 9router's /v1/search and /v1/web/fetch endpoints.",
   "keywords": [
     "deepseek-harness",
@@ -37,15 +37,15 @@
     "zustand": "5.0.15"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "0.x",
-    "@deepseek-ai/dsh-client-locale": "0.x",
-    "@deepseek-ai/dsh-client-store": "0.x",
-    "@deepseek-ai/dsh-client-ui-settings": "0.x",
-    "@deepseek-ai/dsh-client-ui-slots": "0.x",
-    "@deepseek-ai/dsh-credentials": "0.x",
-    "@deepseek-ai/dsh-launch-environment": "0.x",
-    "@deepseek-ai/dsh-settings": "0.x",
-    "@deepseek-ai/dsh-web": "0.x"
+    "@deepseek-ai/dsh-api-remotes": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-client-locale": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-client-store": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-credentials": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-launch-environment": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-settings": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-web": ">=0.1.7-rc.1 <1.0.0"
   },
   "dsh": {
     "bundle": {
