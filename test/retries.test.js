@@ -9,12 +9,12 @@ const BASE_OPTIONS = {
 	searchModel: "search-combo",
 	fetchModel: "fetch-combo",
 	searchType: "web",
-	maxResults: 5,
+	defaultMaxResults: 5,
 	timeoutMs: 5000,
 	searchTimeoutMs: 5000,
 	fetchTimeoutMs: 5000,
 	fetchFormat: "markdown",
-	maxCharacters: 0
+	maxCharacters: 50000
 };
 
 function jsonResponse(status, payload) {
@@ -147,18 +147,19 @@ test("fetch maps a 200 response through mapFetchResponse", async () => {
 		assert.equal(result.statusCode, 200);
 		assert.deepEqual(result.body, { kind: "text", content: "body" });
 		assert.equal(result.truncated, false);
-		assert.equal(stub.calls[0].init.body, JSON.stringify({ model: "fetch-combo", url: "https://example.com", format: "markdown" }));
+		assert.equal(stub.calls[0].init.body, JSON.stringify({ model: "fetch-combo", url: "https://example.com", format: "markdown", maxCharacters: 50000 }));
 	} finally {
 		stub.restore();
 	}
 });
 
-test("fetch sends maxCharacters only when a cap is set", async () => {
-	const stub = installFetchStub(() => jsonResponse(200, { content: { format: "markdown", text: "abc", length: 3 } }));
+test("fetch sends the configured maxCharacters and applies it locally", async () => {
+	const stub = installFetchStub(() => jsonResponse(200, { content: { format: "markdown", text: "abcde", length: 5 } }));
 	try {
 		const provider = new NineRouterFetchProvider(() => ({ ...BASE_OPTIONS, maxCharacters: 3 }));
 		const result = await provider.fetch({ url: "https://example.com" });
 		assert.equal(result.truncated, true);
+		assert.deepEqual(result.body, { kind: "text", content: "abc" });
 		assert.equal(stub.calls[0].init.body, JSON.stringify({ model: "fetch-combo", url: "https://example.com", format: "markdown", maxCharacters: 3 }));
 	} finally {
 		stub.restore();

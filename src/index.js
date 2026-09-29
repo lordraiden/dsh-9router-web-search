@@ -7,9 +7,6 @@ import { WebError } from "@deepseek-ai/dsh-web";
 /** Stable id this provider registers under for both search and fetch. */
 const PROVIDER_ID = "9router";
 
-/** Default endpoint: self-hosted 9router on its default port, `/v1` included (`/search` and `/web/fetch` are appended). */
-const DEFAULT_BASE_URL = "http://localhost:20128/v1";
-
 /** Default model name for the search endpoint. */
 const DEFAULT_SEARCH_MODEL = "search-combo";
 
@@ -28,8 +25,8 @@ const DEFAULT_TIMEOUT_MS = 30000;
 /** Default body format requested from the fetch endpoint. */
 const DEFAULT_FETCH_FORMAT = "markdown";
 
-/** Default fetch body cap in characters; `0` sends no cap. */
-const DEFAULT_MAX_CHARACTERS = 0;
+/** Default fetch body cap in characters; enforced locally and sent to the gateway. */
+const DEFAULT_MAX_CHARACTERS = 50_000;
 
 /**
  * Map the 9router `/v1/search` response to a normalized search result.
@@ -80,7 +77,12 @@ function mapSearchResponse(body) {
  */
 function mapFetchResponse(data, { url, statusCode, maxCharacters }) {
 	const content = data?.content;
-	const text = typeof content?.text === "string" ? content.text : "";
+	let text = typeof content?.text === "string" ? content.text : "";
+	let truncated = false;
+	if (Number.isFinite(maxCharacters) && maxCharacters > 0 && text.length > maxCharacters) {
+		text = text.slice(0, maxCharacters);
+		truncated = true;
+	}
 	return {
 		url,
 		statusCode,
@@ -88,7 +90,7 @@ function mapFetchResponse(data, { url, statusCode, maxCharacters }) {
 			kind: content?.format === "html" ? "html" : "text",
 			content: text
 		},
-		truncated: Number.isFinite(maxCharacters) && maxCharacters > 0 && text.length >= maxCharacters
+		truncated
 	};
 }
 
@@ -101,7 +103,7 @@ var NineRouterSearchProvider = class {
 		this.resolveOptions = resolveOptions;
 	}
 	available() {
-		return URL.canParse(this.resolveOptions().baseURL);
+		return this.resolveOptions().baseURL !== void 0;
 	}
 	async search(request, signal) {
 		const options = this.resolveOptions();
@@ -112,7 +114,7 @@ var NineRouterSearchProvider = class {
 			model: options.searchModel,
 			query: request.query,
 			search_type: options.searchType,
-			max_results: request.maxResults ?? options.maxResults
+			max_results: request.maxResults ?? options.defaultMaxResults
 		};
 		const response = await this.post(endpoint, options, apiKey, body, signal);
 		try {
@@ -160,7 +162,7 @@ var NineRouterFetchProvider = class {
 		this.resolveOptions = resolveOptions;
 	}
 	available() {
-		return URL.canParse(this.resolveOptions().baseURL);
+		return this.resolveOptions().baseURL !== void 0;
 	}
 	async fetch(request, signal) {
 		const options = this.resolveOptions();
@@ -171,7 +173,7 @@ var NineRouterFetchProvider = class {
 			model: options.fetchModel,
 			url: request.url,
 			format: options.fetchFormat,
-			...(options.maxCharacters > 0 ? { maxCharacters: options.maxCharacters } : {})
+			maxCharacters: options.maxCharacters
 		};
 		const response = await requestWithRetries(endpoint, requestInit(apiKey, body), {
 			signal,
@@ -302,22 +304,38 @@ const name = "web-search-9router";
 /** The web seam this plugin's providers register into. */
 const inject = ["web"];
 const DEFAULT_API_KEY_ENV = "NINE_ROUTER_API_KEY";
+/** `baseURL` must be an http(s) endpoint; no implicit fallback endpoint exists. */
+const BASE_URL_PATTERN = /^https?:\/\/\S+$/u;
 const Config = z.object({
 	apiKey: z.string().role("secret"),
 	apiKeyEnv: z.string().role("credential-ref").default(DEFAULT_API_KEY_ENV),
-	baseURL: z.string().default(DEFAULT_BASE_URL),
-	searchModel: z.string().default(DEFAULT_SEARCH_MODEL),
-	fetchModel: z.string().default(DEFAULT_FETCH_MODEL),
-	searchType: z.string().default(DEFAULT_SEARCH_TYPE),
-	maxResults: z.number().step(1).min(1).default(DEFAULT_MAX_RESULTS),
+	baseURL: z.string().min(1).pattern(BASE_URL_PATTERN),
+	searchModel: z.string().min(1).default(DEFAULT_SEARCH_MODEL),
+	fetchModel: z.string().min(1).default(DEFAULT_FETCH_MODEL),
+	searchType: z.string().min(1).default(DEFAULT_SEARCH_TYPE),
+	defaultMaxResults: z.number().step(1).min(1).default(DEFAULT_MAX_RESULTS),
 	timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
 	searchTimeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
 	fetchTimeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
-	fetchFormat: z.string().default(DEFAULT_FETCH_FORMAT),
-	maxCharacters: z.number().step(1).min(0).default(DEFAULT_MAX_CHARACTERS)
+	fetchFormat: z.string().min(1).default(DEFAULT_FETCH_FORMAT),
+	maxCharacters: z.number().step(1).min(1).default(DEFAULT_MAX_CHARACTERS)
 });
 const SEARCH_BASE_URL_ENV = "NINE_ROUTER_BASE_URL";
 const SETTINGS_NAMESPACE = "web-search-9router";
+
+/**
+ * Resolve the endpoint for one operation: explicit configuration wins over the
+ * `NINE_ROUTER_BASE_URL` environment value; with neither set there is no
+ * endpoint and the providers report themselves unavailable. Env values bypass
+ * the schema, so the http(s) check is applied here.
+ * @param ctx - the plugin context (launch environment seam).
+ * @param explicit - the schema-resolved `baseURL`, if configured.
+ * @returns the endpoint, or `undefined` when no endpoint is configured.
+ */
+function resolveBaseURL(ctx, explicit) {
+	const candidate = explicit ?? launchEnvironmentOf(ctx).get(SEARCH_BASE_URL_ENV)?.value;
+	return typeof candidate === "string" && BASE_URL_PATTERN.test(candidate) ? candidate : void 0;
+}
 
 function resolveOptions(ctx, config) {
 	const apiKeyEnv = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV);
@@ -331,11 +349,11 @@ function resolveOptions(ctx, config) {
 			return ambient !== void 0 && ambient.value.length > 0 ? ambient.value : void 0;
 		},
 		apiKeyEnv,
-		baseURL: config.baseURL ?? launchEnvironmentOf(ctx).get(SEARCH_BASE_URL_ENV)?.value ?? DEFAULT_BASE_URL,
+		baseURL: resolveBaseURL(ctx, config.baseURL),
 		searchModel: config.searchModel ?? DEFAULT_SEARCH_MODEL,
 		fetchModel: config.fetchModel ?? DEFAULT_FETCH_MODEL,
 		searchType: config.searchType ?? DEFAULT_SEARCH_TYPE,
-		maxResults: config.maxResults ?? DEFAULT_MAX_RESULTS,
+		defaultMaxResults: config.defaultMaxResults ?? DEFAULT_MAX_RESULTS,
 		timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
 		searchTimeoutMs: config.searchTimeoutMs ?? config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
 		fetchTimeoutMs: config.fetchTimeoutMs ?? config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -361,7 +379,6 @@ function apply(ctx, config) {
 export {
 	Config,
 	DEFAULT_API_KEY_ENV,
-	DEFAULT_BASE_URL,
 	DEFAULT_FETCH_FORMAT,
 	DEFAULT_FETCH_MODEL,
 	DEFAULT_MAX_CHARACTERS,
@@ -372,6 +389,7 @@ export {
 	NineRouterSearchProvider,
 	apply,
 	inject,
+	resolveOptions,
 	mapFetchResponse,
 	mapSearchResponse,
 	name

@@ -67,7 +67,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9
 **2. 接入配置**
 
 - 插件的 bundle patch 已把 `web.searchProvider` 与 `web.fetchProvider` 固定为 `9router` —— 无需手动接入（profile 自己的 `cordis.patch.yml` 可覆盖该行）。
-- 默认 `baseURL` 指向自托管 9router 的 `http://localhost:20128/v1`；可在设置卡片中指向你自己的网关（例如云 9router）。
+- 在设置卡片中设置 `baseURL`（或 `NINE_ROUTER_BASE_URL` 环境变量），指向你的 9router 网关 —— 没有隐式回退端点；未配置端点时 provider 会报告自身不可用。
 - 如果你的 9router 实例需要密钥，在 `~/.dsh/.credentials.yaml` 中保存 `NINE_ROUTER_API_KEY`，或在插件设置中设置字面 `apiKey`。无密钥的实例开箱即用。
 
 **3. 重启并刷新**
@@ -84,20 +84,22 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9
 
 | 键 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `baseURL` | string | `http://localhost:20128/v1` | 你的 9router 兼容 API 的基础地址（同时支持 `NINE_ROUTER_BASE_URL` 环境变量） |
+| `baseURL` | string | — | 你的 9router 兼容 API 的基础地址（仅限 http/https）；解析顺序：显式设置 → `NINE_ROUTER_BASE_URL` 环境变量 → 缺失（provider 不可用） |
 | `searchModel` | string | `search-combo` | 搜索端点使用的模型名 |
 | `fetchModel` | string | `fetch-combo` | 抓取端点使用的模型名 |
 | `searchType` | string | `web` | 发送到搜索端点的 `search_type` |
-| `maxResults` | number | `8` | 每次搜索的最大来源数 |
+| `defaultMaxResults` | number | `8` | 仅当搜索请求未指定 `maxResults` 时使用的来源上限（DSH 接缝负责执行每操作限制） |
 | `timeoutMs` | number | `30000` | 共享的每请求超时（各能力默认值） |
 | `searchTimeoutMs` | number | `30000` | 仅搜索的超时；留空沿用 `timeoutMs` |
 | `fetchTimeoutMs` | number | `30000` | 仅抓取的超时；留空沿用 `timeoutMs` |
 | `fetchFormat` | string | `markdown` | 请求抓取端点返回的正文格式（`markdown`、`text`、`html`） |
-| `maxCharacters` | number | `0` | 抓取正文的字符上限；`0` 表示不限制 |
+| `maxCharacters` | number | `50000` | 抓取正文的字符上限；会发送给网关并在本地强制执行 |
 | `apiKey` | secret | — | 字面 API 密钥（可选；无密钥 = 不发送 `Authorization` 头） |
 | `apiKeyEnv` | credential-ref | `NINE_ROUTER_API_KEY` | 凭据服务的键名 |
 
 自托管 9router 按自己的 provider 配置选择搜索/抓取后端，会忽略 `searchModel`/`fetchModel`；按模型路由的云网关请保留这两个字段。
+
+**端点优先级** — 显式 `baseURL` 设置优先于 `NINE_ROUTER_BASE_URL` 环境变量；两者都未设置时不存在端点，provider 会报告自身不可用。不会静默回退到仓库选定的远端。schema 会在任何请求发出前拒绝非 http(s) URL、空的模型/格式字符串和非正的数值限制。
 
 ## 🧪 开发
 

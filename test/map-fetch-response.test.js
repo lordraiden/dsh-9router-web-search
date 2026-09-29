@@ -36,6 +36,17 @@ test("flags truncated when the body reached the character cap", () => {
 	assert.equal(result.truncated, true);
 });
 
+test("applies the local character cap even when the server ignored it", () => {
+	const text = "a".repeat(120);
+	const result = mapFetchResponse(
+		{ content: { format: "markdown", text, length: text.length } },
+		{ url: "https://example.com", statusCode: 200, maxCharacters: 100 }
+	);
+	assert.equal(result.truncated, true);
+	assert.equal(result.body.content.length, 100);
+	assert.equal(result.body.content, "a".repeat(100));
+});
+
 test("keeps truncated false below the cap and without a cap", () => {
 	const below = mapFetchResponse(
 		{ content: { format: "markdown", text: "short", length: 5 } },
