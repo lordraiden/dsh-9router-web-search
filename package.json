@@ -38,13 +38,13 @@
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-api-remotes": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-client-connection": ">=0.1.7-rc.1 <1.0.0",
     "@deepseek-ai/dsh-client-locale": ">=0.1.7-rc.1 <1.0.0",
-    "@deepseek-ai/dsh-client-store": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": ">=0.1.7-rc.1 <1.0.0",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.7-rc.1 <1.0.0",
     "@deepseek-ai/dsh-client-ui-settings": ">=0.1.7-rc.1 <1.0.0",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.7-rc.1 <1.0.0",
     "@deepseek-ai/dsh-credentials": ">=0.1.7-rc.1 <1.0.0",
     "@deepseek-ai/dsh-launch-environment": ">=0.1.7-rc.1 <1.0.0",
-    "@deepseek-ai/dsh-settings": ">=0.1.7-rc.1 <1.0.0",
     "@deepseek-ai/dsh-web": ">=0.1.7-rc.1 <1.0.0"
   },
   "dsh": {
@@ -55,7 +55,8 @@
       "inject": [
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-settings"
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ],
       "platform": "web"
     }
