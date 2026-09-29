@@ -92,7 +92,9 @@ window.__ModuleLoader__.load({
     };
 
     class NineRouterCardController {
-      constructor(scope, credentials) {
+      constructor(scope, ctx) {
+        this.scope = scope;
+        this.ctx = ctx;
         const specs = [
           settingsTextField("apiKeyEnv"),
           settingsTextField("baseURL"),
@@ -106,23 +108,16 @@ window.__ModuleLoader__.load({
           settingsTextField("fetchFormat"),
           settingsNumberField("maxCharacters")
         ];
-        const secrets = [{
-          field: "apiKey",
-          write: async (text) => {
-            const trimmed = text.trim();
-            if (!trimmed) return true;
-            const result = await credentials.set(DEFAULT_API_KEY_REF, trimmed);
-            return result.ok;
-          }
-        }];
+        const secrets = [{ field: "apiKey", write: (text) => this.writeKey(text) }];
         this.form = new SettingsFormModel(scope, specs, secrets);
-        this.apiKeyConfigured = false;
         this.store = this.form.bind(() => this.projection());
+        this.credential = { ref: "", configured: false, writable: true };
+        this.unsubscribe = scope.subscribe(() => { this.readCredential(); });
+        this.readCredential();
       }
       projection() {
         return {
           ...this.form.shell(),
-          apiKeyConfigured: this.apiKeyConfigured,
           apiKey: this.form.field("apiKey"),
           apiKeyEnv: this.form.field("apiKeyEnv"),
           baseURL: this.form.field("baseURL"),
@@ -134,8 +129,48 @@ window.__ModuleLoader__.load({
           searchTimeoutMs: this.form.field("searchTimeoutMs"),
           fetchTimeoutMs: this.form.field("fetchTimeoutMs"),
           fetchFormat: this.form.field("fetchFormat"),
-          maxCharacters: this.form.field("maxCharacters")
+          maxCharacters: this.form.field("maxCharacters"),
+          apiKeyConfigured: this.credential.configured,
+          apiKeyWritable: this.credential.writable
         };
+      }
+      /**
+       * Ask the credentials domain about the reference the section currently
+       * names. The answer is published only while it still answers for the
+       * reference in force, so a late response for a previous reference never
+       * contaminates the badge.
+       */
+      async readCredential() {
+        const ref = refOf(this.scope.getSnapshot());
+        if (ref !== this.credential.ref) {
+          this.credential = { ref, configured: false, writable: true };
+          this.store.set(this.projection());
+        }
+        const remote = this.ctx?.remote;
+        if (remote?.credentials === void 0) return;
+        const response = await remote.credentials.describe([ref]);
+        if (!response.ok || ref !== refOf(this.scope.getSnapshot())) return;
+        const view = response.value?.[ref];
+        const next = {
+          ref,
+          configured: view?.configured ?? false,
+          writable: view?.writable ?? true
+        };
+        if (next.configured === this.credential.configured && next.writable === this.credential.writable) return;
+        this.credential = next;
+        this.store.set(this.projection());
+      }
+      /** Re-read after the Host reports a change to the reference this page watches. */
+      refreshCredential(ref) {
+        if (ref !== this.credential.ref) return;
+        this.readCredential();
+      }
+      /** Write the staged key to the referenced credential, then re-read its state. */
+      async writeKey(value) {
+        const ref = refOf(this.scope.getSnapshot());
+        await this.ctx.remote.credentials.set(ref, value);
+        await this.readCredential();
+        return this.credential.configured;
       }
       inject() {
         return {
@@ -144,8 +179,20 @@ window.__ModuleLoader__.load({
         };
       }
       dispose() {
+        this.unsubscribe();
         this.form.dispose();
       }
+    }
+
+    /**
+     * The credential reference the section names, or the plugin default when the
+     * field is empty or absent.
+     * @param snapshot - the current scope snapshot.
+     * @returns the reference to address in the credentials domain.
+     */
+    function refOf(snapshot) {
+      const declared = snapshot.value?.apiKeyEnv;
+      return declared !== void 0 && declared.length > 0 ? declared : DEFAULT_API_KEY_REF;
     }
 
     function formLabels(t) {
@@ -194,7 +241,7 @@ window.__ModuleLoader__.load({
             text: state.apiKey.text,
             configured: state.apiKeyConfigured,
             stateLabel: state.apiKeyConfigured ? t("configured") : t("notConfigured"),
-            disabled: !state.writable,
+            disabled: !state.apiKeyWritable,
             onEdit: (text) => props.edit("apiKey", text)
           }),
           jsx(SettingsValueField, {
@@ -358,8 +405,9 @@ window.__ModuleLoader__.load({
     function apply(ctx) {
       const t = ctx.locale.bind(NAMESPACE);
       ctx.effect(() => ctx.locale.register(NAMESPACE, LOCALE), "dsh-9router-web-search: dictionaries");
-      const card = new NineRouterCardController(ctx.configForms.get(NAMESPACE), ctx.remote?.credentials);
+      const card = new NineRouterCardController(ctx.configForms.get(NAMESPACE), ctx);
       ctx.effect(() => () => { card.dispose(); }, "dsh-9router-web-search: form subscription");
+      ctx.effect(() => ctx.remote?.$on?.("credentials/reference-updated", (ref) => { card.refreshCredential(ref); }), "dsh-9router-web-search: credential invalidations");
       ctx.effect(() => ctx.configForms.whileServed([NAMESPACE], () => ctx.slots.inject("plugins.item", () => ctx.slots.register({
         name: "plugins.item",
         id: "9router",
@@ -371,7 +419,7 @@ window.__ModuleLoader__.load({
     }
 
     exports.apply = apply;
-    exports.inject = ["slots", "locale", "configForms", "remote"];
+    exports.inject = ["slots", "locale", "configForms", "remote", "remote.credentials"];
     return exports;
   }
 });
