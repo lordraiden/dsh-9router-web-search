@@ -271,9 +271,16 @@ const Config = z.object({
 	fetchModel: z.string().min(1).default(DEFAULT_FETCH_MODEL),
 	searchType: z.string().min(1).default(DEFAULT_SEARCH_TYPE),
 	defaultMaxResults: z.number().step(1).min(1).default(DEFAULT_MAX_RESULTS),
+	/** Shared per-operation deadline (ms); the per-operation timeouts fall back to it. */
 	timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
-	searchTimeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
-	fetchTimeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
+	/**
+	 * Optional per-operation overrides. Left without a `.default` (schemastery
+	 * schemas are nullable by default) so an empty form field — serialized as
+	 * an `unset` op — resolves to `undefined` and inherits `timeoutMs` in
+	 * `resolveOptions`; a set value always wins.
+	 */
+	searchTimeoutMs: z.number().step(1).min(1),
+	fetchTimeoutMs: z.number().step(1).min(1),
 	fetchFormat: z.string().min(1).default(DEFAULT_FETCH_FORMAT),
 	maxCharacters: z.number().step(1).min(1).default(DEFAULT_MAX_CHARACTERS)
 });

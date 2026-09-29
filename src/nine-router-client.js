@@ -85,19 +85,23 @@ function isRetryableStatus(status) {
 	return status === 500 || status === 502 || status === 503 || status === 504;
 }
 
-function abortableDelay(ms, signal) {
-	if (signal === void 0) return new Promise((resolve) => setTimeout(resolve, ms));
-	if (signal.aborted) return Promise.reject(aborted(signal));
+function abortableDelay(ms, composed, signal, timeout, timeoutMs, kind) {
+	if (composed === void 0) return new Promise((resolve) => setTimeout(resolve, ms));
+	// The composed signal carries both the external abort and the per-operation
+	// timeout, so a deadline that expires mid-backoff rejects here instead of the
+	// operation silently outliving its budget.
+	const classify = () => abortOrTimeout(void 0, signal, timeout, timeoutMs, kind) ?? aborted(signal);
+	if (composed.aborted) return Promise.reject(classify());
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => {
-			signal.removeEventListener("abort", onAbort);
+			composed.removeEventListener("abort", onAbort);
 			resolve();
 		}, ms);
 		const onAbort = () => {
 			clearTimeout(timer);
-			reject(aborted(signal));
+			reject(classify());
 		};
-		signal.addEventListener("abort", onAbort, { once: true });
+		composed.addEventListener("abort", onAbort, { once: true });
 	});
 }
 
@@ -125,7 +129,7 @@ export async function nineRouterPostJson(endpoint, { kind, apiKey, body, timeout
 			const classified = abortOrTimeout(error, signal, timeout, timeoutMs, kind);
 			if (classified !== void 0) throw classified;
 			if (attempt >= delays.length) throw new WebError(`9router ${kind} request failed: ${String(error)}`, WEB_PROVIDER_ERROR, { cause: error });
-			await abortableDelay(delays[attempt], signal);
+			await abortableDelay(delays[attempt], composed, signal, timeout, timeoutMs, kind);
 			attempt += 1;
 			continue;
 		}
@@ -141,7 +145,7 @@ export async function nineRouterPostJson(endpoint, { kind, apiKey, body, timeout
 			return { response, payload };
 		}
 		response.body?.cancel();
-		await abortableDelay(delays[attempt], signal);
+		await abortableDelay(delays[attempt], composed, signal, timeout, timeoutMs, kind);
 		attempt += 1;
 	}
 }
