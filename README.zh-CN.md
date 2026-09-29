@@ -51,10 +51,13 @@ DSH 默认的 `web_search` 使用 `web-search-deepseek` provider，它要求上�
    └── fetch   → POST {baseURL}/web/fetch   → WebFetchBody
             │
             ▼
-      9router gateway (9router)
+      9router gateway
+            │
+            ▼
+   9router providers / model combos
 ```
 
-错误会以机器可路由的 `WebError` 代码（`WEB_PROVIDER_ERROR`、`WEB_ABORTED`）呈现，瞬态网络与 5xx 故障按退避重试，非 2xx 的抓取响应会作为结果返回 —— 绝不静默抛出。
+错误会以机器可路由的 `WebError` 代码（`WEB_PROVIDER_ERROR`、`WEB_TIMEOUT`、`WEB_ABORTED`、`WEB_PROVIDER_CREDENTIAL_MISSING`）呈现，瞬态网络与 5xx 故障按退避重试，非 2xx 的抓取响应会作为结果返回 —— 绝不静默抛出。
 
 ## 🚀 快速开始
 
@@ -68,7 +71,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-
 
 - 插件的 bundle patch 已把 `web.searchProvider` 与 `web.fetchProvider` 固定为 `9router` —— 无需手动接入（profile 自己的 `cordis.patch.yml` 可覆盖该行）。
 - 在设置卡片中设置 `baseURL`（或 `NINE_ROUTER_BASE_URL` 环境变量），指向你的 9router 网关 —— 没有隐式回退端点；未配置端点时 provider 会报告自身不可用。
-- 如果你的 9router 实例需要密钥，在 `~/.dsh/.credentials.yaml` 中保存 `NINE_ROUTER_API_KEY`，或在插件设置中设置字面 `apiKey`。无密钥的实例开箱即用。
+- 如果你的 9router 实例需要密钥，将 `NINE_ROUTER_API_KEY` 存入 DSH 凭据服务 —— 设置卡片中的 API key 字段会写入该凭据 —— 或在插件设置中设置字面 `apiKey`。该密钥在 UI 中为只写，绝不会被存储到本仓库。无密钥的实例开箱即用。
 
 **3. 重启并刷新**
 
@@ -101,28 +104,55 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-
 
 **端点优先级** — 显式 `baseURL` 设置优先于 `NINE_ROUTER_BASE_URL` 环境变量；两者都未设置时不存在端点，provider 会报告自身不可用。不会静默回退到仓库选定的远端。schema 会在任何请求发出前拒绝非 http(s) URL、空的模型/格式字符串和非正的数值限制。
 
+**凭据** — `NINE_ROUTER_API_KEY` 通过 DSH 凭据服务解析；字面 `apiKey` 可选，设置后优先。`apiKeyEnv` 是凭据服务中的引用名，不是密钥本身。该密钥在设置 UI 中为只写，绝不存储到 git，也不会出现在日志、诊断信息或错误消息中。
+
+## 📌 DSH 兼容性
+
+| | 版本 |
+|---|---|
+| 最低支持版本 | `0.1.7-rc.1`（peer 范围 `>=0.1.7-rc.1 <1.0.0`） |
+| 最新已验证版本 | 最新发布的 `0.2.x` —— CI 会安装它（当前为 `0.2.0-rc.2`）并针对其运行完整测试套件 |
+
+CI 会运行两次契约测试套件：一次针对已提交的 peer 范围，一次针对最新的 `0.2.x`。声明范围之外的版本 —— 包括未来的 `1.x` 发布 —— 在以前述方式实际验证之前，**不会**声称兼容。
+
+## 🛡️ 9router 安全
+
+`web_fetch` 能力将 URL 提取与 SSRF 防护委托给 9router **服务端**：插件把目标 URL 发送到 `POST /v1/web/fetch`，并信任网关的抓取边界。插件自身不实现任何本地 SSRF 策略。
+
+请运行已打补丁的、当前版本的 9router —— 抓取端点存在已发布的安全公告：
+
+- [GHSA-qj3v-64wj-q825](https://github.com/decolua/9router/security/advisories/GHSA-qj3v-64wj-q825)
+
 ## 🧪 开发
 
 ```bash
-pnpm install   # 安装依赖
-pnpm test      # 运行测试套件（node:test）
+pnpm install                 # 安装依赖
+pnpm test                    # 运行测试套件（node:test）
+node scripts/validate-pack.mjs  # 校验打包产物
 ```
+
+Node `>=20`（CI 使用 Node 22）与 pnpm（CI 使用 pnpm 10）。
 
 **仓库结构**
 
 ```text
 dsh-9router-web-search/
-├── src/index.js       # 插件入口：search + fetch provider
-├── client.js          # 设置卡片
-├── cordis.patch.yml   # 注册插件的 bundle patch
-├── test/              # node --test 测试套件
-└── package.json       # ESM 插件清单
+├── src/                     # 服务端插件：index.js + nine-router-client.js
+├── client.js                # 设置卡片
+├── cordis.patch.yml         # 注册插件的 bundle patch
+├── test/                    # node --test 契约测试套件
+├── scripts/                 # validate-pack.mjs、sync-storefront.mjs
+├── .github/workflows/       # CI（测试 + 打包、DSH 0.2.x 兼容）与发布
+└── package.json             # ESM 插件清单
 ```
+
+**发布** — 稳定版本以与 `package.json` 匹配的 `v<version>` GitHub Releases 发布；发布 workflow 会在发布前针对 tag 重新运行完整测试套件与打包校验。
+
+**Storefront 同步** — `node scripts/sync-storefront.mjs` 将插件条目同步到 storefront 仓库（手动执行；需要向已配置的 storefront fork 拥有推送权限）。
 
 ## 🌱 生态与发布
 
 - 📦 **分发** — GitHub 仓库是唯一的分发来源；稳定版本以 `v<version>` GitHub Releases 发布。
-- 📚 **目录** — 已收录于 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)。
 - 🐛 **问题与需求** — 请提交 [issue](https://github.com/lordraiden/dsh-9router-web-search/issues)。
 
 ## 📄 许可证
