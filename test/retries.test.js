@@ -174,10 +174,17 @@ test("fetch resolves a non-2xx response as a result", async () => {
 });
 
 // A fetch that never settles on its own; it rejects when its signal aborts, so
-// a short per-operation timeout is what ends it.
+// a short per-operation timeout is what ends it. A ref'd interval keeps the
+// event loop alive until the abort settles the promise: the per-op timeout
+// signal's own timer is unref'd, so without this the loop can drain (and
+// node:test can cancel the test) before the abort dispatch runs under load.
 function hanging(signal) {
 	return new Promise((_resolve, reject) => {
-		const onAbort = () => reject(new DOMException("aborted", "AbortError"));
+		const keepAlive = setInterval(() => {}, 1000);
+		const onAbort = () => {
+			clearInterval(keepAlive);
+			reject(new DOMException("aborted", "AbortError"));
+		};
 		if (signal?.aborted === true) { onAbort(); return; }
 		signal?.addEventListener("abort", onAbort, { once: true });
 	});
