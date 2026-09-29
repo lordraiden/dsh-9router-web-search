@@ -75,8 +75,12 @@ Current configuration concepts include:
 - `searchModel`
 - `fetchModel`
 - `searchType`
-- `maxResults`
+- `defaultMaxResults`
 - `timeoutMs`
+- `searchTimeoutMs`
+- `fetchTimeoutMs`
+- `fetchFormat`
+- `maxCharacters`
 
 When adding or changing configuration:
 

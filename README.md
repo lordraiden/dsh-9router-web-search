@@ -67,7 +67,7 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-web-search-9
 **2. Wire it up**
 
 - The plugin's bundle patch already pins `web.searchProvider` and `web.fetchProvider` to `9router` — no manual wiring needed (a profile's own `cordis.patch.yml` can override the row).
-- The default `baseURL` targets a self-hosted 9router on `http://localhost:20128/v1`; point it at your own gateway (for example a cloud 9router) in the settings card.
+- Set a `baseURL` in the settings card (or a `NINE_ROUTER_BASE_URL` environment value) pointing at your 9router gateway — there is no implicit fallback endpoint; without a configured endpoint the provider reports itself unavailable.
 - If your 9router instance requires a key, store it in `~/.dsh/.credentials.yaml` as `NINE_ROUTER_API_KEY`, or set a literal `apiKey` in the plugin settings. Keyless instances work without any credential.
 
 **3. Restart & refresh**
@@ -84,20 +84,22 @@ Restart Harness, then hard-refresh the browser. The `9router` options appear in 
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `baseURL` | string | `http://localhost:20128/v1` | Base URL of your 9router-compatible API (`NINE_ROUTER_BASE_URL` env also honored) |
+| `baseURL` | string | — | Base URL of your 9router-compatible API (http/https only); resolved as explicit setting → `NINE_ROUTER_BASE_URL` env → absent (provider unavailable) |
 | `searchModel` | string | `search-combo` | Model name for the search endpoint |
 | `fetchModel` | string | `fetch-combo` | Model name for the fetch endpoint |
 | `searchType` | string | `web` | `search_type` sent to the search endpoint |
-| `maxResults` | number | `8` | Max sources per search |
+| `defaultMaxResults` | number | `8` | Source cap used only when a search request does not specify `maxResults` (the DSH seam enforces the per-operation limit) |
 | `timeoutMs` | number | `30000` | Shared per-request timeout (per-capability defaults) |
 | `searchTimeoutMs` | number | `30000` | Search-only timeout; blank follows `timeoutMs` |
 | `fetchTimeoutMs` | number | `30000` | Fetch-only timeout; blank follows `timeoutMs` |
 | `fetchFormat` | string | `markdown` | Body format requested from the fetch endpoint (`markdown`, `text`, `html`) |
-| `maxCharacters` | number | `0` | Character cap for fetched bodies; `0` sends no cap |
+| `maxCharacters` | number | `50000` | Character cap for fetched bodies; sent to the gateway and enforced locally |
 | `apiKey` | secret | — | Literal API key (optional; no key = no `Authorization` header) |
 | `apiKeyEnv` | credential-ref | `NINE_ROUTER_API_KEY` | Credentials-service key name |
 
 Self-hosted 9router picks its search and fetch backends from its own provider configuration and ignores `searchModel`/`fetchModel`; keep those fields set for cloud gateways that route by model.
+
+**Endpoint precedence** — an explicit `baseURL` setting wins over the `NINE_ROUTER_BASE_URL` environment value; with neither set, no endpoint exists and the providers report themselves unavailable. There is no silent fallback to a repository-chosen remote. The schema rejects non-http(s) URLs, empty model/format strings, and non-positive numeric limits before any request is made.
 
 ## 🧪 Development
 

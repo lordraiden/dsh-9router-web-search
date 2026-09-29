@@ -319,14 +319,14 @@ test("editing a field marks the form dirty", () => {
 test("a successful save writes the field and clears the draft", async () => {
 	const scope = createFormScope();
 	const card = mount(scope, createCredentials());
-	card.face.edit("maxResults", "5");
+	card.face.edit("defaultMaxResults", "5");
 	assert.equal(card.state().dirty, true);
 	await card.face.save();
-	assert.deepEqual(scope.writes, [{ ops: [{ op: "set", path: ["maxResults"], value: 5 }], expectedRevision: 1 }]);
+	assert.deepEqual(scope.writes, [{ ops: [{ op: "set", path: ["defaultMaxResults"], value: 5 }], expectedRevision: 1 }]);
 	const state = card.state();
 	assert.equal(state.dirty, false);
 	assert.equal(state.failed, false);
-	assert.equal(state.maxResults.text, "5");
+	assert.equal(state.defaultMaxResults.text, "5");
 });
 
 test("resetting a field clears the draft", () => {
@@ -339,11 +339,11 @@ test("resetting a field clears the draft", () => {
 
 test("a draft that is not a number marks the field invalid", () => {
 	const card = mount(createFormScope(), createCredentials());
-	card.face.edit("maxResults", "abc");
+	card.face.edit("defaultMaxResults", "abc");
 	const state = card.state();
 	assert.equal(state.dirty, true);
 	assert.equal(state.invalid, true);
-	assert.equal(state.maxResults.invalid, true);
+	assert.equal(state.defaultMaxResults.invalid, true);
 });
 
 test("a read-only deployment disables the controls", () => {
