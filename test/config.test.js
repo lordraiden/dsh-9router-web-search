@@ -86,6 +86,40 @@ test("the schema fills defaults for omitted numeric and string options", () => {
 	assert.equal(resolved.fetchFormat, "markdown");
 });
 
+// ── Timeout inheritance ──────────────────────────────────────────────────
+
+test("per-operation timeouts are optional in the schema", () => {
+	const resolved = Config({ timeoutMs: 5000 });
+	assert.equal(resolved.timeoutMs, 5000);
+	assert.equal(resolved.searchTimeoutMs, undefined);
+	assert.equal(resolved.fetchTimeoutMs, undefined);
+});
+
+test("an explicit per-operation timeout still validates", () => {
+	assert.equal(Config({ searchTimeoutMs: 2000 }).searchTimeoutMs, 2000);
+	assert.equal(Config({ fetchTimeoutMs: 3000 }).fetchTimeoutMs, 3000);
+});
+
+test("per-operation timeouts inherit timeoutMs when omitted", () => {
+	const resolved = Config({ timeoutMs: 5000 });
+	const options = resolveOptions(ctxWithEnv(), resolved);
+	assert.equal(options.searchTimeoutMs, 5000);
+	assert.equal(options.fetchTimeoutMs, 5000);
+});
+
+test("an explicit per-operation timeout wins over timeoutMs", () => {
+	const options = resolveOptions(ctxWithEnv(), { timeoutMs: 5000, searchTimeoutMs: 2000, fetchTimeoutMs: 7000 });
+	assert.equal(options.searchTimeoutMs, 2000);
+	assert.equal(options.fetchTimeoutMs, 7000);
+});
+
+test("with no explicit timeouts the default deadline applies", () => {
+	const options = resolveOptions(ctxWithEnv(), {});
+	assert.equal(options.timeoutMs, 30000);
+	assert.equal(options.searchTimeoutMs, 30000);
+	assert.equal(options.fetchTimeoutMs, 30000);
+});
+
 // ── Endpoint precedence ──────────────────────────────────────────────────
 
 test("an explicit baseURL wins over NINE_ROUTER_BASE_URL", () => {

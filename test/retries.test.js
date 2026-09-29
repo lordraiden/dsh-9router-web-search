@@ -31,7 +31,7 @@ function installFetchStub(script) {
 	const original = globalThis.fetch;
 	globalThis.fetch = async (endpoint, init) => {
 		calls.push({ endpoint, init });
-		const next = script(calls.length);
+		const next = script(calls.length, init);
 		if (next instanceof Error) throw next;
 		return next;
 	};
@@ -168,6 +168,67 @@ test("fetch resolves a non-2xx response as a result", async () => {
 		assert.equal(result.body.kind, "text");
 		assert.match(result.body.content, /not found/);
 		assert.equal(result.truncated, false);
+	} finally {
+		stub.restore();
+	}
+});
+
+// A fetch that never settles on its own; it rejects when its signal aborts, so
+// a short per-operation timeout is what ends it.
+function hanging(signal) {
+	return new Promise((_resolve, reject) => {
+		const onAbort = () => reject(new DOMException("aborted", "AbortError"));
+		if (signal?.aborted === true) { onAbort(); return; }
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
+test("a timed-out search surfaces WEB_TIMEOUT", async () => {
+	const stub = installFetchStub((_n, init) => hanging(init.signal));
+	try {
+		const provider = new NineRouterSearchProvider(() => ({ ...BASE_OPTIONS, searchTimeoutMs: 50 }));
+		const controller = new AbortController();
+		await assert.rejects(provider.search({ query: "q" }, controller.signal), (error) => {
+			assert.equal(error.name, "WebError");
+			assert.equal(error.code, "WEB_TIMEOUT");
+			return true;
+		});
+	} finally {
+		stub.restore();
+	}
+});
+
+test("a timeout during a retry backoff ends the operation with WEB_TIMEOUT", async () => {
+	const stub = installFetchStub(() => jsonResponse(502, { error: { message: "upstream down" } }));
+	try {
+		const provider = new NineRouterSearchProvider(() => ({ ...BASE_OPTIONS, searchTimeoutMs: 30 }));
+		const started = Date.now();
+		await assert.rejects(provider.search({ query: "q" }), (error) => {
+			assert.equal(error.name, "WebError");
+			assert.equal(error.code, "WEB_TIMEOUT");
+			return true;
+		});
+		// The deadline cut the 500ms backoff short: no full backoff, no extra attempt.
+		assert.ok(Date.now() - started < 500, "must not wait the full 500ms backoff");
+		assert.equal(stub.calls.length, 1, "no retry after the deadline expired");
+	} finally {
+		stub.restore();
+	}
+});
+
+test("an external abort during a retry backoff ends the operation with WEB_ABORTED", async () => {
+	const stub = installFetchStub(() => jsonResponse(502, { error: { message: "upstream down" } }));
+	try {
+		const controller = new AbortController();
+		const provider = new NineRouterSearchProvider(() => ({ ...BASE_OPTIONS }));
+		const pending = provider.search({ query: "q" }, controller.signal);
+		// The first 502 starts a 500ms backoff; abort during it.
+		setTimeout(() => controller.abort(), 20);
+		await assert.rejects(pending, (error) => {
+			assert.equal(error.name, "WebError");
+			assert.equal(error.code, "WEB_ABORTED");
+			return true;
+		});
 	} finally {
 		stub.restore();
 	}
