@@ -3,7 +3,7 @@
 > **Web search & fetch for DeepSeek Harness, powered by 9router.**
 > Wires the native `web_search` and `web_fetch` tools into 9router's `/v1/search` and `/v1/web/fetch` endpoints — no server-side search tool required.
 
-[![Version](https://img.shields.io/badge/version-0.2.0-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
+[![Version](https://img.shields.io/badge/version-0.2.3-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![ESM](https://img.shields.io/badge/module-ESM-8e44ad)](https://nodejs.org/api/esm.html)

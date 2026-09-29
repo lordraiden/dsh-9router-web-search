@@ -3,7 +3,7 @@
 > **为 DeepSeek Harness 提供由 9router 背书的网页搜索与抓取。**
 > 将原生 `web_search` 与 `web_fetch` 工具接入 9router 的 `/v1/search` 与 `/v1/web/fetch` 端点 —— 无需服务端搜索工具。
 
-[![Version](https://img.shields.io/badge/version-0.2.0-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
+[![Version](https://img.shields.io/badge/version-0.2.3-green)](https://github.com/lordraiden/dsh-web-search-9router/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![ESM](https://img.shields.io/badge/module-ESM-8e44ad)](https://nodejs.org/api/esm.html)
