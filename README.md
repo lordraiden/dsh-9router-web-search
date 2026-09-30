@@ -77,10 +77,10 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-
 
 Restart Harness, then hard-refresh the browser. The `9router` options appear in the web settings card.
 
-> 🔒 **Reproducible installs** — append a commit SHA to pin an exact version:
+> 🔒 **Reproducible installs** — append a release tag (or commit SHA) to pin an exact version:
 >
 > ```bash
-> npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-search#44d1936
+> npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-search#v0.2.3
 > ```
 
 ## 🛠️ Configuration
@@ -110,10 +110,10 @@ Self-hosted 9router picks its search and fetch backends from its own provider co
 
 | | Version |
 |---|---|
-| Minimum supported | `0.1.7-rc.1` (peer range `>=0.1.7-rc.1 <1.0.0`) |
+| Minimum supported | `0.1.7-rc.1` (peer range `>=0.1.7-rc.1 <0.3.0`) |
 | Latest tested | the newest published `0.2.x` — CI installs it (currently `0.2.0-rc.2`) and runs the full suite against it |
 
-CI runs the contract suite twice: once against the committed peer ranges, and once against the latest `0.2.x`. Versions outside the declared range — including future `1.x` releases — are **not** claimed compatible until they are exercised the same way.
+CI and the release workflow both run the shared compatibility check (`scripts/check-dsh-compat.mjs`): once against the declared minimum and once against the latest published `0.2.x`. A failing check stops the release workflow before the release is created. Versions outside the declared range — including future `1.x` releases — are **not** claimed compatible until they are exercised the same way.
 
 ## 🛡️ 9router security
 
