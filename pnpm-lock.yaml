@@ -9,31 +9,31 @@ importers:
   .:
     dependencies:
       '@deepseek-ai/dsh-api-remotes':
-        specifier: '>=0.1.7-rc.1 <1.0.0'
+        specifier: '>=0.1.7-rc.1 <0.3.0'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)))
       '@deepseek-ai/dsh-client-connection':
-        specifier: '>=0.1.7-rc.1 <1.0.0'
+        specifier: '>=0.1.7-rc.1 <0.3.0'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-scope@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)))
       '@deepseek-ai/dsh-client-locale':
-        specifier: '>=0.1.7-rc.1 <1.0.0'
+        specifier: '>=0.1.7-rc.1 <0.3.0'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-ui-plugin-manager':
-        specifier: '>=0.1.7-rc.1 <1.0.0'
+        specifier: '>=0.1.7-rc.1 <0.3.0'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-ui-primitives':
-        specifier: '>=0.1.7-rc.1 <1.0.0'
+        specifier: '>=0.1.7-rc.1 <0.3.0'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-ui-settings':
-        specifier: '>=0.1.7-rc.1 <1.0.0'
+        specifier: '>=0.1.7-rc.1 <0.3.0'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-credentials':
-        specifier: '>=0.1.7-rc.1 <1.0.0'
+        specifier: '>=0.1.7-rc.1 <0.3.0'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))
       '@deepseek-ai/dsh-launch-environment':
-        specifier: '>=0.1.7-rc.1 <1.0.0'
+        specifier: '>=0.1.7-rc.1 <0.3.0'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-web':
-        specifier: '>=0.1.7-rc.1 <1.0.0'
+        specifier: '>=0.1.7-rc.1 <0.3.0'
         version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-llm@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4))
       '@deepseek-ai/schemastery':
         specifier: ^3.18.2

@@ -40,8 +40,8 @@ jobs:
       - name: Validate packaged artifact
         run: node scripts/validate-pack.mjs
 
-  compat-latest:
-    name: DSH 0.2x compatibility
+  compat:
+    name: DSH compatibility
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -57,21 +57,13 @@ jobs:
         with:
           version: 10
 
-      - name: Resolve the latest DSH 0.2.x version
-        run: |
-          version=$(npm view @deepseek-ai/dsh-web versions --json | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const v=JSON.parse(d).filter(x=>x.startsWith('0.2.'));if(!v.length)process.exit(1);v.sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));console.log(v[v.length-1])})")
-          echo "Latest DSH 0.2.x: ${version}"
-          echo "DSH_VERSION=${version}" >> "${GITHUB_ENV}"
+      - name: Check the declared minimum DSH version
+        run: node scripts/check-dsh-compat.mjs min
 
-      - name: Pin peer ranges to the latest DSH 0.2.x
-        run: |
-          node -e "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));for(const name of Object.keys(pkg.peerDependencies)){pkg.peerDependencies[name]='>=${DSH_VERSION} <0.3.0'}fs.writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n')"
-          # The peer ranges were just rewritten to the latest 0.2.x, so the committed
-          # lockfile no longer matches package.json. This job deliberately installs the
-          # latest peers in an ephemeral CI workspace (the regenerated lockfile is never
-          # committed), so frozen-lockfile is intentionally disabled here — unlike the
-          # `test` job, which installs the committed source as-is.
-          pnpm install --no-frozen-lockfile
-
-      - name: Run the contract suite against DSH 0.2.x
-        run: pnpm test
+      - name: Check the latest published DSH 0.2.x
+        # The script resolves the target with a semver-aware comparison
+        # (prereleases sort below their stable release), verifies it against
+        # the declared peer range, pins the peers to it in an ephemeral
+        # manifest, runs the contract suite, and restores the committed
+        # manifest and lockfile.
+        run: node scripts/check-dsh-compat.mjs latest-0.2x

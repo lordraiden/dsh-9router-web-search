@@ -49,6 +49,14 @@ jobs:
       - name: Validate packaged artifact
         run: node scripts/validate-pack.mjs
 
+      - name: Gate on DSH compatibility
+        # The same shared check CI runs: the declared minimum plus the latest
+        # published 0.2.x. A failing check stops the workflow before the
+        # release is created.
+        run: |
+          node scripts/check-dsh-compat.mjs min
+          node scripts/check-dsh-compat.mjs latest-0.2x
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
