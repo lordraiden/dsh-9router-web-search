@@ -53,12 +53,12 @@ test("the schema rejects non-http(s) base URLs", () => {
 });
 
 test("the schema accepts http and https base URLs", () => {
-	assert.equal(Config({ baseURL: "http://localhost:20128/v1" }).baseURL, "http://localhost:20128/v1");
-	assert.equal(Config({ baseURL: "https://gateway.example/v1" }).baseURL, "https://gateway.example/v1");
+	assert.equal(Config({ baseURL: "http://localhost:20128/v1" }).baseURL.get(), "http://localhost:20128/v1");
+	assert.equal(Config({ baseURL: "https://gateway.example/v1" }).baseURL.get(), "https://gateway.example/v1");
 });
 
 test("an absent baseURL resolves to no endpoint", () => {
-	assert.equal(Config({}).baseURL, undefined);
+	assert.equal(Config({}).baseURL.get(), undefined);
 });
 
 test("the schema rejects invalid numeric limits", () => {
@@ -78,26 +78,38 @@ test("the schema rejects empty model and format strings", () => {
 	assert.throws(() => Config({ fetchFormat: "" }));
 });
 
+test("every Config field is volatile so the 0.2.x settings seam serves the form", () => {
+	// The DSH 0.2.x settings seam only serves a plugin form built from
+	// volatile fields; without them the namespace is never served and the
+	// settings card renders no input fields.
+	const dict = Config.dict ?? {};
+	const fields = Object.keys(dict);
+	assert.ok(fields.length > 0, "Config must declare fields");
+	for (const field of fields) {
+		assert.equal(dict[field].meta?.volatile, true, `Config field "${field}" must be volatile`);
+	}
+});
+
 test("the schema fills defaults for omitted numeric and string options", () => {
 	const resolved = Config({});
-	assert.equal(resolved.defaultMaxResults, 8);
-	assert.equal(resolved.timeoutMs, 30000);
-	assert.equal(resolved.maxCharacters, 50000);
-	assert.equal(resolved.fetchFormat, "markdown");
+	assert.equal(resolved.defaultMaxResults.get(), 8);
+	assert.equal(resolved.timeoutMs.get(), 30000);
+	assert.equal(resolved.maxCharacters.get(), 50000);
+	assert.equal(resolved.fetchFormat.get(), "markdown");
 });
 
 // ── Timeout inheritance ──────────────────────────────────────────────────
 
 test("per-operation timeouts are optional in the schema", () => {
 	const resolved = Config({ timeoutMs: 5000 });
-	assert.equal(resolved.timeoutMs, 5000);
-	assert.equal(resolved.searchTimeoutMs, undefined);
-	assert.equal(resolved.fetchTimeoutMs, undefined);
+	assert.equal(resolved.timeoutMs.get(), 5000);
+	assert.equal(resolved.searchTimeoutMs.get(), undefined);
+	assert.equal(resolved.fetchTimeoutMs.get(), undefined);
 });
 
 test("an explicit per-operation timeout still validates", () => {
-	assert.equal(Config({ searchTimeoutMs: 2000 }).searchTimeoutMs, 2000);
-	assert.equal(Config({ fetchTimeoutMs: 3000 }).fetchTimeoutMs, 3000);
+	assert.equal(Config({ searchTimeoutMs: 2000 }).searchTimeoutMs.get(), 2000);
+	assert.equal(Config({ fetchTimeoutMs: 3000 }).fetchTimeoutMs.get(), 3000);
 });
 
 test("per-operation timeouts inherit timeoutMs when omitted", () => {
