@@ -328,12 +328,19 @@ function resolveOptions(ctx, config) {
 
 /** Register the 9router search + fetch providers with `ctx.web`. */
 function apply(ctx, config) {
-	let current = () => config;
+	let source = config;
+	const current = () => source;
 	ctx.inject(["settings"], (settingsCtx) => {
-		settingsCtx.settings.installSection(ctx, SETTINGS_NAMESPACE, Config, config, {
-			setSource: (source) => { current = source; },
-			onChange: () => {}
-		});
+		const settings = settingsCtx.settings;
+		// DSH 0.2.x auto-generates settings forms from `.volatile()` Config
+		// fields, so its settings seam exposes no `installSection`; 0.1.x does.
+		// Register only when the seam provides it, so the entry activates on both.
+		if (typeof settings.installSection === "function") {
+			settings.installSection(ctx, SETTINGS_NAMESPACE, Config, config, {
+				setSource: (s) => { source = s; },
+				onChange: () => {}
+			});
+		}
 	});
 	ctx.web.registerSearchProvider(new NineRouterSearchProvider(() => resolveOptions(ctx, current())));
 	ctx.web.registerFetchProvider(new NineRouterFetchProvider(() => resolveOptions(ctx, current())));
