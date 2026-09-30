@@ -263,26 +263,29 @@ const inject = ["web"];
 const DEFAULT_API_KEY_ENV = "NINE_ROUTER_API_KEY";
 /** `baseURL` must be an http(s) endpoint; no implicit fallback endpoint exists. */
 const BASE_URL_PATTERN = /^https?:\/\/\S+$/u;
+// Every field is `.volatile()`: the DSH 0.2.x settings seam only serves a
+// plugin form built from volatile fields, so without them the namespace is
+// never served and the settings card renders no input fields.
 const Config = z.object({
-	apiKey: z.string().role("secret"),
-	apiKeyEnv: z.string().role("credential-ref").default(DEFAULT_API_KEY_ENV),
-	baseURL: z.string().min(1).pattern(BASE_URL_PATTERN),
-	searchModel: z.string().min(1).default(DEFAULT_SEARCH_MODEL),
-	fetchModel: z.string().min(1).default(DEFAULT_FETCH_MODEL),
-	searchType: z.string().min(1).default(DEFAULT_SEARCH_TYPE),
-	defaultMaxResults: z.number().step(1).min(1).default(DEFAULT_MAX_RESULTS),
+	apiKey: z.string().role("secret").volatile(),
+	apiKeyEnv: z.string().role("credential-ref").default(DEFAULT_API_KEY_ENV).volatile(),
+	baseURL: z.string().min(1).pattern(BASE_URL_PATTERN).volatile(),
+	searchModel: z.string().min(1).default(DEFAULT_SEARCH_MODEL).volatile(),
+	fetchModel: z.string().min(1).default(DEFAULT_FETCH_MODEL).volatile(),
+	searchType: z.string().min(1).default(DEFAULT_SEARCH_TYPE).volatile(),
+	defaultMaxResults: z.number().step(1).min(1).default(DEFAULT_MAX_RESULTS).volatile(),
 	/** Shared per-operation deadline (ms); the per-operation timeouts fall back to it. */
-	timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS),
+	timeoutMs: z.number().step(1).min(1).default(DEFAULT_TIMEOUT_MS).volatile(),
 	/**
 	 * Optional per-operation overrides. Left without a `.default` (schemastery
 	 * schemas are nullable by default) so an empty form field — serialized as
 	 * an `unset` op — resolves to `undefined` and inherits `timeoutMs` in
 	 * `resolveOptions`; a set value always wins.
 	 */
-	searchTimeoutMs: z.number().step(1).min(1),
-	fetchTimeoutMs: z.number().step(1).min(1),
-	fetchFormat: z.string().min(1).default(DEFAULT_FETCH_FORMAT),
-	maxCharacters: z.number().step(1).min(1).default(DEFAULT_MAX_CHARACTERS)
+	searchTimeoutMs: z.number().step(1).min(1).volatile(),
+	fetchTimeoutMs: z.number().step(1).min(1).volatile(),
+	fetchFormat: z.string().min(1).default(DEFAULT_FETCH_FORMAT).volatile(),
+	maxCharacters: z.number().step(1).min(1).default(DEFAULT_MAX_CHARACTERS).volatile()
 });
 const SEARCH_BASE_URL_ENV = "NINE_ROUTER_BASE_URL";
 const SETTINGS_NAMESPACE = "web-search-9router";
@@ -301,11 +304,21 @@ function resolveBaseURL(ctx, explicit) {
 	return typeof candidate === "string" && BASE_URL_PATTERN.test(candidate) ? candidate : void 0;
 }
 
+/**
+ * Unwrap a DSH 0.2.x volatile config reference; plain values (0.1.x, or
+ * partial literals in tests) pass through unchanged.
+ * @param value - a resolved config field, in either shape.
+ * @returns the field's value.
+ */
+function configValue(value) {
+	return typeof value === "object" && value !== null && typeof value.get === "function" ? value.get() : value;
+}
+
 function resolveOptions(ctx, config) {
-	const apiKeyEnv = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV);
-	const literalApiKey = config.apiKey !== void 0 && config.apiKey.length > 0 ? config.apiKey : void 0;
+	const apiKeyEnv = credentialRef(configValue(config.apiKeyEnv) ?? DEFAULT_API_KEY_ENV);
+	const literalApiKey = configValue(config.apiKey);
 	return {
-		...literalApiKey === void 0 ? {} : { apiKey: literalApiKey },
+		...literalApiKey !== void 0 && literalApiKey.length > 0 ? { apiKey: literalApiKey } : {},
 		resolveApiKey: async () => {
 			const credentials = ctx.get("credentials");
 			if (credentials !== void 0) return (await credentials.resolve(apiKeyEnv))?.value;
@@ -313,16 +326,16 @@ function resolveOptions(ctx, config) {
 			return ambient !== void 0 && ambient.value.length > 0 ? ambient.value : void 0;
 		},
 		apiKeyEnv,
-		baseURL: resolveBaseURL(ctx, config.baseURL),
-		searchModel: config.searchModel ?? DEFAULT_SEARCH_MODEL,
-		fetchModel: config.fetchModel ?? DEFAULT_FETCH_MODEL,
-		searchType: config.searchType ?? DEFAULT_SEARCH_TYPE,
-		defaultMaxResults: config.defaultMaxResults ?? DEFAULT_MAX_RESULTS,
-		timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-		searchTimeoutMs: config.searchTimeoutMs ?? config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-		fetchTimeoutMs: config.fetchTimeoutMs ?? config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-		fetchFormat: config.fetchFormat ?? DEFAULT_FETCH_FORMAT,
-		maxCharacters: config.maxCharacters ?? DEFAULT_MAX_CHARACTERS
+		baseURL: resolveBaseURL(ctx, configValue(config.baseURL)),
+		searchModel: configValue(config.searchModel) ?? DEFAULT_SEARCH_MODEL,
+		fetchModel: configValue(config.fetchModel) ?? DEFAULT_FETCH_MODEL,
+		searchType: configValue(config.searchType) ?? DEFAULT_SEARCH_TYPE,
+		defaultMaxResults: configValue(config.defaultMaxResults) ?? DEFAULT_MAX_RESULTS,
+		timeoutMs: configValue(config.timeoutMs) ?? DEFAULT_TIMEOUT_MS,
+		searchTimeoutMs: configValue(config.searchTimeoutMs) ?? configValue(config.timeoutMs) ?? DEFAULT_TIMEOUT_MS,
+		fetchTimeoutMs: configValue(config.fetchTimeoutMs) ?? configValue(config.timeoutMs) ?? DEFAULT_TIMEOUT_MS,
+		fetchFormat: configValue(config.fetchFormat) ?? DEFAULT_FETCH_FORMAT,
+		maxCharacters: configValue(config.maxCharacters) ?? DEFAULT_MAX_CHARACTERS
 	};
 }
 
