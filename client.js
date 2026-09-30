@@ -110,8 +110,10 @@ window.__ModuleLoader__.load({
         ];
         const secrets = [{ field: "apiKey", write: (text) => this.writeKey(text) }];
         this.form = new SettingsFormModel(scope, specs, secrets);
-        this.store = this.form.bind(() => this.projection());
+        // `bind` evaluates the projection immediately, so the credential
+        // state it reads must exist before the bind.
         this.credential = { ref: "", configured: false, writable: true };
+        this.store = this.form.bind(() => this.projection());
         this.unsubscribe = scope.subscribe(() => { this.readCredential(); });
         this.readCredential();
       }
