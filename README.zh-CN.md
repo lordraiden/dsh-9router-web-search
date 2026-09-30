@@ -77,10 +77,10 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-
 
 重启 Harness，然后强制刷新浏览器。web 设置卡片中会出现 `9router` 选项。
 
-> 🔒 **可复现安装** — 追加 commit SHA 以锁定精确版本：
+> 🔒 **可复现安装** — 追加发布标签（或 commit SHA）以锁定精确版本：
 >
 > ```bash
-> npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-search#44d1936
+> npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-search#v0.2.3
 > ```
 
 ## 🛠️ 配置
@@ -110,10 +110,10 @@ npx @deepseek-ai/dsh plugin --profile web add github:lordraiden/dsh-9router-web-
 
 | | 版本 |
 |---|---|
-| 最低支持版本 | `0.1.7-rc.1`（peer 范围 `>=0.1.7-rc.1 <1.0.0`） |
+| 最低支持版本 | `0.1.7-rc.1`（peer 范围 `>=0.1.7-rc.1 <0.3.0`） |
 | 最新已验证版本 | 最新发布的 `0.2.x` —— CI 会安装它（当前为 `0.2.0-rc.2`）并针对其运行完整测试套件 |
 
-CI 会运行两次契约测试套件：一次针对已提交的 peer 范围，一次针对最新的 `0.2.x`。声明范围之外的版本 —— 包括未来的 `1.x` 发布 —— 在以前述方式实际验证之前，**不会**声称兼容。
+CI 与发布工作流都会运行共享的兼容性检查（`scripts/check-dsh-compat.mjs`）：一次针对声明的最低版本，一次针对最新发布的 `0.2.x`。检查失败会在创建发布前停止工作流。声明范围之外的版本 —— 包括未来的 `1.x` 发布 —— 在以前述方式实际验证之前，**不会**声称兼容。
 
 ## 🛡️ 9router 安全
 
